@@ -81,14 +81,16 @@ and sasmodels caches the result after that. OpenCL is off by default
 * **Background guess on load:** when a newly loaded dataset becomes active,
   the background box is set to the mean I of its 3 highest-Q points
   (once per file, so reloading the page keeps any value you've typed since).
-  **Bkg from high Q** re-applies it.
-* **Match scale / Match scale + bkg**: a weighted linear least-squares solve
+  **bg** (Match) re-applies it.
+* **Scale / Scale+bg** (Match): a weighted linear least-squares solve
   over the χ² window, with the model shape fixed. It's for getting the curve
   onto the data before you start adjusting by eye.
-* **Pin curve** keeps the current curve, residuals and χ² as a dashed
+* **Pin** (Curve) keeps the current curve, residuals and χ² as a dashed
   reference to compare against.
-* **Save / Load parameters** (JSON: model, values, PD, slider ranges, Q window)
-  and **Export curve CSV** (Q, I, dI, model, residual, in-window flag).
+* **Save / Load** (Parameters; JSON: model, values, PD, slider ranges, Q window)
+  and **CSV ↓** (Curve; Q, I, dI, model, residual, in-window flag).
+* These buttons sit in a compact bar at the top right of the plot panel, next
+  to the χ²/N readout; hover any of them for the full description.
 
 ## Fitting (optional)
 
@@ -130,6 +132,73 @@ describe the parameters on screen.
 
 **Copy** and **Save parameters** include the method, χ²ᵣ, degrees of freedom,
 uncertainties and any parameters at a bound while the fit is current.
+
+## Guess (ML model suggestion)
+
+**Guess** (Model panel) passes the active dataset, inside the χ² window, to the
+trained network from the `ml-sans` project. It shows the ranked sasmodels
+suggestions with their probabilities, and loads the top one sassafras can
+handle. Click any other row to load that model instead.
+
+The network ranks models only; it doesn't predict parameters. Starting values
+come from a quick prior search:
+
+1. Up to 300 parameter sets for the suggested model (about 4 s) are drawn from
+   the same physical priors the network was trained on (`sans_ml.priors`,
+   including PD and the S(Q) effective-radius handling).
+2. Each set is scored against the data with sassafras's resolution-smeared
+   evaluation and the closed-form scale/background solve.
+3. If `bumps` is installed, the best three draws get a short, time-limited
+   Levenberg–Marquardt polish of the parameters the prior varies.
+
+The result is a starting point, not a final fit; refine it with the sliders or
+the Fit toggle.
+
+* Two-component suggestions (`A+B`) are listed but can't be loaded yet.
+* As the ml-sans README notes, the network does well on simulated-like curves
+  and less well on measured data, so treat the top three as the answer.
+* Setup: keep the `ml-sans` folder next to the sassafras folder, or pass
+  `--ml-sans /path/to/ml-sans` (or set `SASSAFRAS_ML_SANS`). Then install its
+  requirements (`torch`, `h5py`, `scipy`, `iquana`) in the same environment as
+  sassafras, e.g. `<that python> -m pip install -r ml-sans/requirements.txt`.
+  Without them the Guess button is dimmed; clicking it shows what is missing,
+  and the terminal prints a `Guess: ready` or `Guess: unavailable` line at
+  start-up.
+* The network runs in a short-lived child process, so PyTorch is never loaded
+  into the sassafras server. (On macOS, PyTorch and numpy/sasmodels can bring
+  conflicting OpenMP runtimes, which aborts the process that loads both.)
+* S(Q) can now be added to any form factor except those that already include
+  inter-particle structure or describe no finite particle. This is the same
+  rule ml-sans uses, so its P@S suggestions load.
+
+## IQuana notebook
+
+**IQuana notebook ↗** (top right of the plot panel) writes a Jupyter notebook with
+[IQuana](https://pypi.org/project/iquana/) code that reproduces what is on
+screen, then opens it in JupyterLab. It covers the data, model and structure
+factor, every parameter value, polydispersity, the Q window and the
+resolution. When the Fit toggle is on it also sets up the same fit: the ticked
+parameters with the slider ranges as bounds, and the same method (LM, simplex
+and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
+
+* Notebooks are saved in `~/sassafras_notebooks` (change it with
+  `--notebook-dir`). One JupyterLab server rooted there is started on first
+  use and reused afterwards; it keeps running after sassafras stops, so open
+  notebooks aren't lost.
+* A check cell prints IQuana's χ²/N next to the sassafras value. IQuana builds
+  kernels in single precision, so they agree to about 1 part in 10⁴.
+* Path-loaded files are read from their original location. Uploaded files,
+  and files that sassafras rescaled or trimmed on load, are saved next to the
+  notebook as a CSV snapshot (Q, I, dI, dQ).
+* Effective radius: sasmodels' `radius_effective_mode` "unconstrained" maps
+  to IQuana's `'unconstrained'`, and "radius" to `'link_radius'`. Other
+  computed modes (equivalent volume sphere, excluded volume, …) have no IQuana
+  equivalent, so `radius_effective` is fixed at the value sasmodels computes
+  for the current geometry, and the notebook says so.
+* Models with per-shell vector parameters (e.g. `core_multi_shell`) can't be
+  addressed shell by shell in IQuana 0.5, so they are refused with a message.
+* Needs `iquana` and `jupyterlab` in the same Python environment:
+  `pip install iquana jupyterlab`, or `pip install -e ".[notebook]"`.
 
 ## Copy to notebook
 
@@ -189,8 +258,11 @@ NXcanSAS), and a synthetic SAXS core–shell dataset written in nm⁻¹.
 sassafras/backend.py   data loading (sasdata), model catalogue, evaluation (sasmodels)
 sassafras/server.py    stdlib HTTP server + CLI
 sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel)
+sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
+sassafras/guess.py     Guess: ml-sans model suggestion + prior-search starting values
+sassafras/_guess_worker.py  child process that runs the ml-sans network (torch)
 sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
-                       fitting.js (Fit toggle and controls), app.css, logos + favicon
+                       fitting.js (Fit toggle and controls), notebook.js, guess.js, app.css, logos + favicon
 ```
 
 The backend can be used without the GUI:

@@ -43,11 +43,16 @@ function sv(tag, attrs = {}, text) {
 function setStatus(text, kind = '') { const s = $('status'); s.textContent = text; s.className = kind; }
 
 async function api(path, body, raw = null, headers = {}) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: raw ? { 'X-GUI-Token': TOKEN, ...headers } : { 'Content-Type': 'application/json', 'X-GUI-Token': TOKEN },
-    body: raw || JSON.stringify(body || {}),
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method: 'POST',
+      headers: raw ? { 'X-GUI-Token': TOKEN, ...headers } : { 'Content-Type': 'application/json', 'X-GUI-Token': TOKEN },
+      body: raw || JSON.stringify(body || {}),
+    });
+  } catch {
+    throw new Error('Lost contact with the sassafras server: it may have stopped. Check its terminal window, then restart it.');
+  }
   let out;
   try { out = await res.json(); } catch { throw new Error(`Server returned ${res.status}`); }
   if (!res.ok) throw new Error(out.error || `Request failed (${res.status})`);
@@ -215,7 +220,7 @@ async function selectModel(model, sf, carry = true, preset = null) {
   const prev = { params: S.params, pd: S.pd, ranges: S.ranges, desc: S.desc };
   S.model = model; S.sf = sf || '';
   $('model-select').value = model; $('sq-select').value = S.sf; $('sq-select').disabled = !entry.accepts_sq;
-  $('sq-select').title = entry.accepts_sq ? '' : 'This form factor has no volume parameters, so S(Q) cannot be applied.';
+  $('sq-select').title = entry.accepts_sq ? '' : 'No S(Q) for this model: it already includes inter-particle structure, or describes no finite particle.';
   const full = fullName();
   const mem = preset || S.memory[full];
   setStatus(`Compiling ${full}…`);
@@ -872,7 +877,14 @@ function wire() {
 
   $('model-filter').oninput = populateModels;
   $('model-filter').onkeydown = e => {
-    if (e.key === 'Enter') { e.preventDefault(); const first = $('model-select').querySelector('option:not([data-current])'); if (first && first.value !== S.model) selectModel(first.value, S.sf); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // exact name first ("cylinder" → cylinder, not barbell), then a name starting with the text, then the first match
+      const f = $('model-filter').value.trim().toLowerCase();
+      const opts = [...$('model-select').querySelectorAll('option:not([data-current])')];
+      const pick = opts.find(o => o.value === f) || opts.find(o => o.value.startsWith(f)) || opts[0];
+      if (pick && pick.value !== S.model) selectModel(pick.value, S.sf);
+    }
   };
   $('model-select').onchange = () => selectModel($('model-select').value, S.sf);
   $('sq-select').onchange = () => selectModel(S.model, $('sq-select').value);
@@ -938,6 +950,7 @@ async function start() {
     const st = await res.json();
     S.catalogue = st.catalogue;
     if (typeof onState === 'function') onState(st);               // fitting.js hook
+    if (typeof onGuessState === 'function') onGuessState(st);     // guess.js hook
     $('versions').textContent = Object.entries(st.versions).map(([k, v]) => `${k} ${v}`).join(' · ');
     $('versions').dataset.version = st.versions.sassafras || '';
     $('ext-hint').textContent = 'canSAS XML · NXcanSAS · ASCII/CSV · IGOR · pdh …';

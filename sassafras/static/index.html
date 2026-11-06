@@ -31,7 +31,8 @@
     </section>
 
     <section class="panel" id="model-panel">
-      <h2>Model</h2>
+      <div class="panel-head"><h2>Model</h2><button id="guess" class="small" title="Ask the ml-sans network which sasmodels model fits the active dataset (inside the χ² window), and load the top suggestion with starting values">Guess</button></div>
+      <div id="guess-box" class="guess" hidden></div>
       <div class="field">
         <label for="model-filter">Form factor</label>
         <input type="search" id="model-filter" placeholder="Filter models…" spellcheck="false">
@@ -47,38 +48,50 @@
     <section class="panel" id="param-panel">
       <div class="panel-head"><h2>Parameters</h2><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div>
       <div id="params"></div>
-      <div class="buttons">
-        <button id="match-scale" title="Weighted least-squares scale with the current shape and background held fixed">Match scale</button>
-        <button id="match-both" title="Weighted least-squares scale and background with the current shape held fixed">Match scale + bkg</button>
-        <button id="bkg-est" title="Set background to the mean intensity of the active dataset's 3 highest-Q points">Bkg from high Q</button>
-      </div>
-      <div class="buttons">
-        <button id="pin">Pin curve</button>
-        <button id="unpin" disabled>Clear pin</button>
-      </div>
-      <div class="buttons">
-        <button id="save-params">Save parameters</button>
-        <label class="button" for="load-params">Load parameters<input type="file" id="load-params" accept=".json,application/json" hidden></label>
-        <button id="export-csv">Export curve CSV</button>
-      </div>
     </section>
   </aside>
 
   <section class="panel plot-panel">
     <div class="score">
       <div title="Σ((I − model)/dI)² ÷ points in the χ² window, on the active dataset's Q with its resolution applied. Nothing is fitted, so use it to compare settings, not as a goodness-of-fit test."><small>χ² / N in Q window</small><strong id="chisq">—</strong></div>
-      <div><small>Points in window</small><span id="npts">—</span></div>
+      <div><small>Points</small><span id="npts">—</span></div>
       <div id="pin-score" hidden><small>Pinned curve χ² / N</small><span id="pin-chisq">—</span></div>
       <div class="fit-only"><small>Fit χ²ᵣ (BUMPS)</small><span id="fit-chi">—</span></div>
       <div><small>Evaluation</small><span id="timing">—</span></div>
-      <div class="copybar" role="group" aria-label="Copy to notebook">
-        <small>Copy to notebook</small>
-        <div>
-          <button id="copy-all" class="small primary" title="Figure + parameter table as one rich paste (OneNote, ELN, Word)">All</button>
-          <button id="copy-figure" class="small" title="Figure (data, model, residuals, legend) as an image">Figure</button>
-          <button id="copy-params" class="small" title="Model, χ² and parameter table">Parameters</button>
-          <button id="copy-data" class="small" title="Q, I, dI, model, residual table (pastes into Excel as columns)">Data</button>
-          <button id="save-png" class="small ghost" title="Download the figure as PNG">PNG ↓</button>
+      <div class="actions">
+        <div class="actgroup" role="group" aria-label="Match the curve to the data">
+          <small>Match</small>
+          <div>
+            <button id="match-scale" class="small" title="Match scale: weighted least-squares scale with the current shape and background held fixed">Scale</button>
+            <button id="match-both" class="small" title="Match scale and background: weighted least squares with the current shape held fixed">Scale+bg</button>
+            <button id="bkg-est" class="small" title="Set background to the mean intensity of the active dataset's 3 highest-Q points">bg</button>
+          </div>
+        </div>
+        <div class="actgroup" role="group" aria-label="Reference curve">
+          <small>Curve</small>
+          <div>
+            <button id="pin" class="small" title="Keep the current curve as a dashed reference">Pin</button>
+            <button id="unpin" class="small" disabled title="Remove the pinned reference curve">Unpin</button>
+            <button id="export-csv" class="small" title="Export the curve (Q, I, dI, model, residual) as CSV">CSV ↓</button>
+          </div>
+        </div>
+        <div class="actgroup" role="group" aria-label="Parameters">
+          <small>Parameters</small>
+          <div>
+            <button id="save-params" class="small" title="Save model, values, PD, slider ranges and Q window as JSON">Save</button>
+            <label class="button small" for="load-params" title="Load a saved parameter JSON">Load<input type="file" id="load-params" accept=".json,application/json" hidden></label>
+            <button id="export-nb" class="small primary" title="Write a Jupyter notebook with IQuana code that reproduces this state (and the same fit setup), and open it in JupyterLab">IQuana notebook ↗</button>
+          </div>
+        </div>
+        <div class="actgroup" role="group" aria-label="Copy to notebook">
+          <small>Copy to notebook</small>
+          <div>
+            <button id="copy-all" class="small primary" title="Figure + parameter table as one rich paste (OneNote, ELN, Word)">All</button>
+            <button id="copy-figure" class="small" title="Figure (data, model, residuals, legend) as an image">Figure</button>
+            <button id="copy-params" class="small" title="Model, χ² and parameter table">Params</button>
+            <button id="copy-data" class="small" title="Q, I, dI, model, residual table (pastes into Excel as columns)">Data</button>
+            <button id="save-png" class="small ghost" title="Download the figure as PNG">PNG ↓</button>
+          </div>
         </div>
       </div>
     </div>
@@ -130,5 +143,7 @@
 <script src="/static/app.js"></script>
 <script src="/static/copy.js"></script>
 <script src="/static/fitting.js"></script>
+<script src="/static/notebook.js"></script>
+<script src="/static/guess.js"></script>
 </body>
 </html>

@@ -129,6 +129,7 @@ class FitJob:
     def _run(self):
         self.state = "running"
         _, cls_name, options = METHODS[self.method]
+        options = {**options, **(self.request.get("options") or {})}
         fitclass = getattr(fitters, cls_name)
         try:
             with warnings.catch_warnings():

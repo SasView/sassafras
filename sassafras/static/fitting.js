@@ -76,6 +76,7 @@ function onControlsBuilt() {
       slot ? slot.replaceWith(lab) : pdHead.append(lab);
     }
   }
+  updateFitButtons();   // the Fit button must reflect this model's remembered ticks
   onRendered();
 }
 

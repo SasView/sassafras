@@ -85,6 +85,8 @@ class Dataset:
     q_unit_in_file: str = ""
     i_unit: str = ""
     notes: list[str] = field(default_factory=list)
+    entry: int = 0          # index of this entry in the file, as sasdata's Loader returns it
+    altered: bool = False   # True if Q was rescaled or points were dropped on load
     loaded_at: float = field(default_factory=time.time)
 
     def to_sasmodels_data(self):
@@ -141,6 +143,7 @@ def datasets_from_loader_output(items, source: str, label_hint: str) -> tuple[li
     if skipped:
         messages.append(f"{label_hint}: skipped {skipped} 2D data set(s); reduce to 1D (I(Q)) first.")
     for k, d in enumerate(one_d):
+        raw_index = next(j for j, item in enumerate(items) if item is d)
         q = np.asarray(d.x, dtype=float).ravel()
         y = np.asarray(d.y, dtype=float).ravel()
         n = q.size
@@ -174,7 +177,8 @@ def datasets_from_loader_output(items, source: str, label_hint: str) -> tuple[li
         records.append(dict(
             label=label, source=source, q=pick(q), i=pick(y), di=pick(di), dq=pick(dq),
             dxl=pick(dxl), dxw=pick(dxw), q_unit_in_file=q_unit,
-            i_unit=getattr(d, "_yunit", "") or "", notes=notes))
+            i_unit=getattr(d, "_yunit", "") or "", notes=notes,
+            entry=raw_index, altered=(factor != 1.0) or not bool(np.all(keep))))
     return records, messages
 
 
@@ -182,7 +186,7 @@ def load_file(path: str, label: str | None = None) -> tuple[list[dict], list[str
     """Load any file sasdata can read (canSAS XML, NXcanSAS HDF5, ASCII/CSV,
     IGOR .abs/.cor, .pdh, ...). Returns (records, messages)."""
     from sasdata.dataloader.loader import Loader
-    p = Path(path).expanduser()
+    p = Path(path).expanduser().resolve()   # absolute, so exports work from any folder
     if not p.is_file():
         raise UserError(f"File not found: {p}")
     with warnings.catch_warnings():
@@ -222,6 +226,19 @@ CATEGORY_LABELS = {
 }
 
 
+# Form factors that get no S(Q): they already contain inter-particle interference
+# (paracrystals, lamellar stacks, binary_hard_sphere, RPA, peaks/correlation
+# functions) or describe no finite particle (power laws, line). sasmodels can
+# build "x@hardsphere" for them, but it is not physically meaningful. Same list
+# as ml-sans (sans_ml.catalogue.NO_STRUCTURE_FACTOR), so its suggestions load.
+NO_STRUCTURE_FACTOR = {
+    "bcc_paracrystal", "fcc_paracrystal", "sc_paracrystal",
+    "lamellar_stack_caille", "lamellar_hg_stack_caille", "lamellar_stack_paracrystal",
+    "binary_hard_sphere", "rpa", "be_polyelectrolyte", "teubner_strey", "spinodal",
+    "gaussian_peak", "peak_lorentz", "broad_peak", "porod", "power_law", "line",
+}
+
+
 def _first_sentence(text: str, limit: int = 220) -> str:
     text = " ".join((text or "").split())
     m = re.match(r"(.{20,}?[.!?])(\s|$)", text)
@@ -243,12 +260,11 @@ class Catalogue:
     def listing(self) -> dict:
         form_factors, structure_factors = [], []
         for name, info in sorted(self.infos.items()):
-            pars = info.parameters.kernel_parameters
             entry = {
                 "name": name,
                 "title": info.title or name,
                 "category": CATEGORY_LABELS.get(info.category, info.category or "Other"),
-                "accepts_sq": (not info.structure_factor) and any(p.type == "volume" for p in pars),
+                "accepts_sq": (not info.structure_factor) and name not in NO_STRUCTURE_FACTOR,
             }
             if info.structure_factor:
                 structure_factors.append(entry)

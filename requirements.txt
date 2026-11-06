@@ -3,3 +3,10 @@ sasmodels==1.1.0
 sasdata==0.12.2
 numpy==2.5.3
 bumps==1.0.3   # optional: enables the Fit toggle
+# optional: IQuana notebook export
+# iquana==0.5.0
+# jupyterlab
+# optional: Guess button (with the ml-sans folder next to sassafras)
+# torch>=2.5
+# h5py
+# scipy
