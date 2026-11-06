@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="gui-token" content="__TOKEN__">
+<title>sassafras</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+</head>
+<body>
+<header class="top">
+  <h1 style="margin:0"><img class="logo logo-light" src="/static/logo-light.png" alt="sassafras"><img class="logo logo-dark" src="/static/logo-dark.png" alt="sassafras"></h1>
+  <div class="top-right"><span id="versions"></span><button id="theme" class="ghost small" title="Colour theme: follows the system until you choose">Theme: auto</button><button id="stop" class="ghost small">Stop server</button></div>
+</header>
+
+<main>
+  <aside class="side">
+    <section class="panel" id="data-panel">
+      <h2>Data</h2>
+      <label class="drop" id="drop" title="The active (radio) dataset supplies the Q points, resolution and χ²; ticked swatches are drawn.">
+        <input type="file" id="file-input" multiple hidden>
+        <span><b>Drop files here</b> or click to browse</span>
+        <small id="ext-hint">canSAS XML, NXcanSAS, ASCII/CSV, …</small>
+      </label>
+      <form class="path-row" id="path-form">
+        <input type="text" id="path-input" placeholder="/path/to/file or folder" spellcheck="false" aria-label="Path to load">
+        <button type="submit">Load</button>
+      </form>
+      <div id="dataset-list" class="datasets" role="radiogroup" aria-label="Active dataset"></div>
+    </section>
+
+    <section class="panel" id="model-panel">
+      <h2>Model</h2>
+      <div class="field">
+        <label for="model-filter">Form factor</label>
+        <input type="search" id="model-filter" placeholder="Filter models…" spellcheck="false">
+        <select id="model-select" size="1"></select>
+      </div>
+      <div class="field">
+        <label for="sq-select">Structure factor S(Q)</label>
+        <select id="sq-select"><option value="">None — P(Q) only</option></select>
+      </div>
+      <p id="model-summary" class="summary"></p>
+    </section>
+
+    <section class="panel" id="param-panel">
+      <div class="panel-head"><h2>Parameters</h2><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div>
+      <div id="params"></div>
+      <div class="buttons">
+        <button id="match-scale" title="Weighted least-squares scale with the current shape and background held fixed">Match scale</button>
+        <button id="match-both" title="Weighted least-squares scale and background with the current shape held fixed">Match scale + bkg</button>
+        <button id="bkg-est" title="Set background to the mean intensity of the active dataset's 3 highest-Q points">Bkg from high Q</button>
+      </div>
+      <div class="buttons">
+        <button id="pin">Pin curve</button>
+        <button id="unpin" disabled>Clear pin</button>
+      </div>
+      <div class="buttons">
+        <button id="save-params">Save parameters</button>
+        <label class="button" for="load-params">Load parameters<input type="file" id="load-params" accept=".json,application/json" hidden></label>
+        <button id="export-csv">Export curve CSV</button>
+      </div>
+    </section>
+  </aside>
+
+  <section class="panel plot-panel">
+    <div class="score">
+      <div title="Σ((I − model)/dI)² ÷ points in the χ² window, on the active dataset's Q with its resolution applied. Nothing is fitted, so use it to compare settings, not as a goodness-of-fit test."><small>χ² / N in Q window</small><strong id="chisq">—</strong></div>
+      <div><small>Points in window</small><span id="npts">—</span></div>
+      <div id="pin-score" hidden><small>Pinned curve χ² / N</small><span id="pin-chisq">—</span></div>
+      <div><small>Evaluation</small><span id="timing">—</span></div>
+      <div class="copybar" role="group" aria-label="Copy to notebook">
+        <small>Copy to notebook</small>
+        <div>
+          <button id="copy-all" class="small primary" title="Figure + parameter table as one rich paste (OneNote, ELN, Word)">All</button>
+          <button id="copy-figure" class="small" title="Figure (data, model, residuals, legend) as an image">Figure</button>
+          <button id="copy-params" class="small" title="Model, χ² and parameter table">Parameters</button>
+          <button id="copy-data" class="small" title="Q, I, dI, model, residual table (pastes into Excel as columns)">Data</button>
+          <button id="save-png" class="small ghost" title="Download the figure as PNG">PNG ↓</button>
+        </div>
+      </div>
+    </div>
+    <div id="status" role="status" aria-live="polite">Starting…</div>
+
+    <div class="toolbar">
+      <div class="group">
+        <label><input type="checkbox" id="logx" checked> log Q</label>
+        <label><input type="checkbox" id="logy" checked> log I</label>
+        <button id="unzoom" class="ghost small" title="Also: double-click the plot">Reset zoom</button>
+      </div>
+      <div class="group" id="window-group" title="Points outside this Q window are greyed and ignored for χ² and Match">
+        <span>χ² window</span>
+        <input type="number" id="win-min" class="num" step="any" placeholder="Q min" aria-label="Q window minimum">
+        <span>–</span>
+        <input type="number" id="win-max" class="num" step="any" placeholder="Q max" aria-label="Q window maximum">
+        <span class="unit">Å⁻¹</span>
+      </div>
+      <div class="group" id="grid-group" title="Q grid used when no dataset is active">
+        <span>Model grid</span>
+        <input type="number" id="grid-min" class="num" step="any" value="0.001" aria-label="Grid Q minimum">
+        <span>–</span>
+        <input type="number" id="grid-max" class="num" step="any" value="0.5" aria-label="Grid Q maximum">
+        <input type="number" id="grid-n" class="num short" step="1" value="300" aria-label="Grid points">
+        <span class="unit">pts</span>
+      </div>
+    </div>
+
+    <div id="legend" class="legend"></div>
+    <div class="plot-wrap"><svg id="main-plot" class="plot" viewBox="0 0 940 420" role="img" aria-label="Intensity against Q"></svg></div>
+    <div id="resid-wrap" class="plot-wrap">
+      <div class="subhead">Normalised residuals (I − model) / dI</div>
+      <svg id="resid-plot" class="plot" viewBox="0 0 940 200" role="img" aria-label="Normalised residuals against Q"></svg>
+    </div>
+    <div id="readout" class="readout">Hover to read values · drag to zoom · double-click to reset</div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+<script src="/static/copy.js"></script>
+</body>
+</html>
