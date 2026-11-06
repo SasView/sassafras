@@ -11,7 +11,7 @@
 <body>
 <header class="top">
   <h1 style="margin:0"><img class="logo logo-light" src="/static/logo-light.png" alt="sassafras"><img class="logo logo-dark" src="/static/logo-dark.png" alt="sassafras"></h1>
-  <div class="top-right"><span id="versions"></span><button id="theme" class="ghost small" title="Colour theme: follows the system until you choose">Theme: auto</button><button id="stop" class="ghost small">Stop server</button></div>
+  <div class="top-right"><span id="versions"></span><label class="fit-switch" id="fit-toggle-label"><input type="checkbox" id="fit-toggle" role="switch"> Fit</label><button id="theme" class="ghost small" title="Colour theme: follows the system until you choose">Theme: auto</button><button id="stop" class="ghost small">Stop server</button></div>
 </header>
 
 <main>
@@ -69,6 +69,7 @@
       <div title="Σ((I − model)/dI)² ÷ points in the χ² window, on the active dataset's Q with its resolution applied. Nothing is fitted, so use it to compare settings, not as a goodness-of-fit test."><small>χ² / N in Q window</small><strong id="chisq">—</strong></div>
       <div><small>Points in window</small><span id="npts">—</span></div>
       <div id="pin-score" hidden><small>Pinned curve χ² / N</small><span id="pin-chisq">—</span></div>
+      <div class="fit-only"><small>Fit χ²ᵣ (BUMPS)</small><span id="fit-chi">—</span></div>
       <div><small>Evaluation</small><span id="timing">—</span></div>
       <div class="copybar" role="group" aria-label="Copy to notebook">
         <small>Copy to notebook</small>
@@ -80,6 +81,14 @@
           <button id="save-png" class="small ghost" title="Download the figure as PNG">PNG ↓</button>
         </div>
       </div>
+    </div>
+    <div class="fitbar fit-only" role="group" aria-label="Fitting">
+      <select id="fit-method" aria-label="Fit method"></select>
+      <button id="fit-run" class="primary small">Fit</button>
+      <button id="fit-cancel" class="small" hidden>Cancel</button>
+      <button id="fit-undo" class="small ghost" disabled title="Restore the values from before the last fit">Undo fit</button>
+      <span id="fit-count" class="muted"></span>
+      <span id="fit-progress" class="muted"></span>
     </div>
     <div id="status" role="status" aria-live="polite">Starting…</div>
 
@@ -117,5 +126,6 @@
 </main>
 <script src="/static/app.js"></script>
 <script src="/static/copy.js"></script>
+<script src="/static/fitting.js"></script>
 </body>
 </html>

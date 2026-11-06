@@ -2,3 +2,4 @@
 sasmodels==1.1.0
 sasdata==0.12.2
 numpy==2.5.3
+bumps==1.0.3   # optional: enables the Fit toggle
