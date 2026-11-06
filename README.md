@@ -5,8 +5,10 @@
 A lightweight SANS/SAXS quick-look tool for the beamline. Load reduced 1D data
 in any format sasdata reads, pick a sasmodels form factor (optionally × a
 structure factor), and drag sliders to overlay the model on the data —
-chi-by-eye, with live χ² and residuals. There is no optimiser. The only
-automatic step is a one-click linear solve for scale and background.
+chi-by-eye, with live χ² and residuals. With the **Fit** toggle off there is
+no optimiser; the only automatic step is a one-click linear solve for scale
+and background. Switch **Fit** on to refine the chi-by-eye starting point
+with BUMPS (needs the optional `bumps` package).
 
 It is a generalised version of `elliptical_cylinder_gui`: the same local
 browser GUI with no external JavaScript, now working with any model and any
@@ -15,7 +17,7 @@ data file, and it runs without data loaded.
 ## Run
 
 ```bash
-pip install -r requirements.txt          # sasmodels, sasdata, numpy
+pip install -r requirements.txt          # sasmodels, sasdata, numpy (+ bumps for fitting)
 python -m sassafras                       # from this folder, no install needed
 python -m sassafras run_1234.xml run_1235.h5 -m core_shell_sphere -s hardsphere
 python -m sassafras /data/reduced/        # load every readable file in a folder (≤ 50)
@@ -89,6 +91,47 @@ and sasmodels caches the result after that. OpenCL is off by default
 * **Save / Load parameters** (JSON: model, values, PD, slider ranges, Q window)
   and **Export curve CSV** (Q, I, dI, model, residual, in-window flag).
 
+## Fitting (optional)
+
+Install `bumps` (`pip install bumps`, or `pip install -e ".[fit]"`) and restart
+sassafras. A **Fit** toggle in the header then shows the fitting controls. With
+it off, or without bumps installed, the page is the plain chi-by-eye viewer.
+
+1. Get close by eye: sliders, **Bkg from high Q**, **Match scale + bkg**.
+2. Tick the parameters to vary. A **fit** tick also appears in each open PD
+   panel. Ticks are remembered per model.
+3. **The slider's min/max boxes are the fit bounds** (0–1 for PD widths), so
+   narrow them to keep the fit physical.
+4. Pick a method and press **Fit**:
+   * **Levenberg–Marquardt**: fast, local, with ± from the covariance. The
+     default.
+   * **Nelder–Mead simplex**: local and robust to rough χ² surfaces.
+   * **Differential evolution**: global search within the bounds. Slower.
+   * **DREAM**: MCMC, so the ± values come from the posterior. The slowest
+     (seconds to minutes).
+5. The fit runs in the background with live step and χ²ᵣ readouts.
+   **Cancel** keeps the best point found so far.
+
+When it finishes:
+
+* the sliders move to the fitted values;
+* each fitted parameter shows its ± 1σ uncertainty (flagged ⚑ if it ended on
+  a bound: widen that range and refit);
+* the starting curve is pinned as "before fit";
+* **Undo fit** restores the previous values.
+
+The fit uses the same model, resolution (dQ or slit) and χ² window as the
+overlay, through `sasmodels.bumps_model`.
+
+Two χ² values are shown side by side. **Fit χ²ᵣ (BUMPS)** is
+Σ((I − model)/dI)² / (N − p), the usual reduced χ². **χ²/N** is the
+fit-agnostic number used everywhere else. Change any value by hand and the
+± values disappear and the fit χ²ᵣ is struck through, because they no longer
+describe the parameters on screen.
+
+**Copy** and **Save parameters** include the method, χ²ᵣ, degrees of freedom,
+uncertainties and any parameters at a bound while the fit is current.
+
 ## Copy to notebook
 
 Buttons above the plot put content on the clipboard, ready to paste into
@@ -123,7 +166,10 @@ conversion, product and polydisperse models, vector parameters, the
 scale/background solve, error reporting and every HTTP endpoint. One
 regression test reproduces the `elliptical_cylinder_gui` starting curve to
 within 2 × 10⁻⁶ relative, and its BUMPS χ² (561.675) after the N/(N − p)
-rescale.
+rescale. With bumps installed, `tests/test_fit.py` checks that LM and
+simplex fits recover known parameters within their uncertainties, that the Q
+window and PD widths are respected, that cancellation works and that bad
+requests are rejected. Those tests are skipped when bumps is absent.
 
 `examples/` contains measured flexible elliptical cylinder SANS data
 (`flexible_cylinder_elliptical.dat`; four columns Q (Å⁻¹), I, dI (cm⁻¹), dQ (Å⁻¹), with
@@ -135,7 +181,9 @@ NXcanSAS), and a synthetic SAXS core–shell dataset written in nm⁻¹.
 ```
 sassafras/backend.py   data loading (sasdata), model catalogue, evaluation (sasmodels)
 sassafras/server.py    stdlib HTTP server + CLI
-sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard), app.css, logos + favicon
+sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel)
+sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
+                       fitting.js (Fit toggle and controls), app.css, logos + favicon
 ```
 
 The backend can be used without the GUI:
@@ -149,7 +197,7 @@ out = s.evaluate({"model": "sphere", "structure_factor": "hardsphere",
 out["chisq"]
 ```
 
-Tested with Python 3.13, sasmodels 1.1.0, sasdata 0.12.2 and numpy 2.5.3, in
+Tested with Python 3.13, sasmodels 1.1.0, sasdata 0.12.2, bumps 1.0.3 and numpy 2.5.3, in
 headless Chromium (light and dark themes, desktop and phone widths).
 
 ## Licence

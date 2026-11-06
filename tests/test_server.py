@@ -63,3 +63,25 @@ def test_upload_describe_evaluate_match(base):
     assert status == 200 and m["scale"] > 0
     status, err = post(base, "/api/evaluate", {"model": "nope", "params": {}})
     assert status == 400 and "Unknown" in err["error"]
+
+
+def test_fit_endpoints(base):
+    pytest.importorskip("bumps")
+    import time
+    state = json.loads(urllib.request.urlopen(base + "/api/state").read())
+    assert state["fit"]["available"] and {m["id"] for m in state["fit"]["methods"]} >= {"lm", "dream"}
+    status, out = post(base, "/api/upload", raw=EXAMPLE.read_bytes(), headers={"X-Filename": EXAMPLE.name})
+    ds = out["added"][0]["id"]
+    req = {"model": "sphere", "structure_factor": "hardsphere", "dataset": ds, "method": "lm",
+           "params": {"radius": 58, "volfraction": 0.2, "scale": 0.1, "background": 0.01, "sld": 1, "sld_solvent": 6.3},
+           "free": {"radius": [10, 200], "scale": [1e-4, 1]}}
+    status, job = post(base, "/api/fit/start", req)
+    assert status == 200, job
+    for _ in range(200):
+        status, st = post(base, "/api/fit/status", {"id": job["id"]})
+        if st["state"] not in ("starting", "running"):
+            break
+        time.sleep(0.05)
+    assert st["state"] == "done" and set(st["result"]["values"]) == {"radius", "scale"}
+    status, err = post(base, "/api/fit/status", {"id": "nope"})
+    assert status == 400

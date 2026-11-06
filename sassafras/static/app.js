@@ -297,6 +297,7 @@ function buildControls() {
   for (const k of Object.keys(controls)) delete controls[k];
   for (const p of S.desc.parameters) box.append(makeControl(p));
   refreshChanged();
+  if (typeof onControlsBuilt === 'function') onControlsBuilt();   // fitting.js hook
 }
 function makeControl(p) {
   const wrap = el('div', { class: 'param', 'data-name': p.name });
@@ -583,6 +584,7 @@ function inWindow(q) { const [a, b] = windowRange(); return (a === null || q >= 
 
 function render() {
   renderMain(); renderResiduals(); renderLegend(); renderScore();
+  if (typeof onRendered === 'function') onRendered();             // fitting.js hook
 }
 function renderMain() {
   const svg = $('main-plot'); svg.replaceChildren();
@@ -745,7 +747,9 @@ function paramsDoc() {
   const pd = {}; for (const [k, v] of Object.entries(S.pd)) if (v.width > 0) pd[k] = v;
   return {
     sassafras: $('versions').dataset.version || '', saved: new Date().toISOString(),
-    note: 'Manual (chi-by-eye) parameter values; not a fit, no uncertainties.',
+    note: (typeof fitInfo === 'function' && fitInfo()) ? 'Values from a BUMPS fit (see "fit").'
+      : 'Manual (chi-by-eye) parameter values; not a fit, no uncertainties.',
+    fit: typeof fitInfo === 'function' ? fitInfo() : null,
     model: S.model, structure_factor: S.sf || null, sasmodels_name: fullName(),
     params: S.params, pd, controls: S.controls, slider_ranges: S.ranges,
     dataset: ds ? { label: ds.label, source: ds.source } : null,
@@ -775,6 +779,7 @@ function exportCsv() {
   const doc = paramsDoc();
   let text = `# sassafras model curve (manual parameters, not a fit)\n# model: ${cur.model}\n# params: ${JSON.stringify(doc.params)}\n`;
   if (Object.keys(doc.pd).length) text += `# polydispersity: ${JSON.stringify(doc.pd)}\n`;
+  if (doc.fit) text += `# fit: ${JSON.stringify(doc.fit)}\n`;
   if (ds) {
     text += `# dataset: ${ds.label} (${ds.source})\n# resolution: ${ds.resolution}\n# q_window: ${JSON.stringify(doc.q_window)}\n# chisq_per_point: ${cur.chisq}\n`;
     text += 'Q_invA,I,dI,I_model,residual_over_dI,in_window\n';
@@ -876,6 +881,7 @@ async function start() {
     if (!res.ok) throw new Error('Could not reach the sassafras server.');
     const st = await res.json();
     S.catalogue = st.catalogue;
+    if (typeof onState === 'function') onState(st);               // fitting.js hook
     $('versions').textContent = Object.entries(st.versions).map(([k, v]) => `${k} ${v}`).join(' · ');
     $('versions').dataset.version = st.versions.sassafras || '';
     $('ext-hint').textContent = 'canSAS XML · NXcanSAS · ASCII/CSV · IGOR · pdh …';

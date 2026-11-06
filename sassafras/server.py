@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from .backend import Session, UserError, supported_extensions
+from . import fit as fitting
 
 STATIC = Path(__file__).with_name("static")
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -25,20 +26,20 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 def versions() -> dict:
     out = {}
-    for name in ("sasmodels", "sasdata", "numpy"):
+    for name in ("sasmodels", "sasdata", "bumps", "numpy"):
         try:
             out[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
-            out[name] = "?"
-    try:
-        out["sassafras"] = importlib.metadata.version("sassafras")
-    except importlib.metadata.PackageNotFoundError:
-        from . import __version__
-        out["sassafras"] = __version__
+            if name != "bumps":
+                out[name] = "?"
+    from . import __version__   # the running code, not a possibly stale install record
+    out["sassafras"] = __version__
     return out
 
 
 def make_handler(session: Session, token: str, startup: dict):
+    fits = fitting.FitManager(session)
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
@@ -77,6 +78,7 @@ def make_handler(session: Session, token: str, startup: dict):
                     "datasets": [d.summary() for d in session.datasets.values()],
                     "extensions": supported_extensions(),
                     "startup": startup,
+                    "fit": fitting.capabilities(),
                 })
             else:
                 self.send(404, "Not found", "text/plain")
@@ -124,6 +126,12 @@ def make_handler(session: Session, token: str, startup: dict):
                     self.send_json(200, session.evaluate(body))
                 elif path == "/api/match":
                     self.send_json(200, session.match_scale(body))
+                elif path == "/api/fit/start":
+                    self.send_json(200, fits.start(body))
+                elif path == "/api/fit/status":
+                    self.send_json(200, fits.get(body.get("id")).status())
+                elif path == "/api/fit/cancel":
+                    self.send_json(200, fits.cancel(body.get("id")))
                 else:
                     self.send_json(404, {"error": "Not found"})
             except UserError as exc:

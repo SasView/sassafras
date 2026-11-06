@@ -18,18 +18,24 @@ function windowText() {
 function titleLine() {
   const { ds, cur, scored } = copyContext();
   const bits = [ds ? ds.label : 'Model only', cur ? cur.model : fullName()];
-  if (scored) bits.push(`χ²/N = ${fmt(cur.chisq, 4)} (N = ${cur.chisq_n}, ${windowText()})`);
+  const fit = fitNow();
+  if (fit) bits.push(`fit χ²ᵣ = ${fmt(fit.chisq_reduced, 4)} (${fit.method})`);
+  else if (scored) bits.push(`χ²/N = ${fmt(cur.chisq, 4)} (N = ${cur.chisq_n}, ${windowText()})`);
   return bits.join(' · ');
 }
+const fitNow = () => (typeof fitInfo === 'function' ? fitInfo() : null);
 function paramRows() {
-  const rows = [];
+  const rows = [], fit = fitNow();
   for (const p of S.desc?.parameters || []) {
     let value = S.params[p.name];
     let shown = p.kind === 'choice' ? `${p.choices[Math.round(value)]} (${value})` : fmt(value, 6);
     const pd = S.pd[p.name];
-    const pdText = pd && pd.width > 0 ? `PD ${fmt(pd.width, 3)} ${pd.type}` : '';
+    let pdText = pd && pd.width > 0 ? `PD ${fmt(pd.width, 3)} ${pd.type}` : '';
+    const e = fit && fit.stderr[p.name], epd = fit && fit.stderr[`${p.name}_pd`];
+    if (fit && `${p.name}_pd` in fit.stderr) pdText += ` ± ${epd === null ? '?' : fmt(epd, 2)} (fitted)`;
     rows.push({ name: p.name, value: shown, units: p.units ? prettyUnits(p.units) : '', pd: pdText,
-      changed: value !== p.default });
+      unc: fit && p.name in fit.stderr ? (e === null ? '± ?' : `± ${fmt(e, 2)}`) : '',
+      fitted: !!(fit && p.name in fit.stderr), changed: value !== p.default });
   }
   return rows;
 }
@@ -40,10 +46,13 @@ function summaryText() {
   const lines = [`sassafras ${$('versions').dataset.version || ''} · ${new Date().toLocaleString()}`];
   if (ds) lines.push(`Dataset: ${ds.label} (${ds.source}; ${ds.resolution})`);
   lines.push(`Model: ${cur ? cur.model : fullName()}`);
-  if (scored) lines.push(`χ²/N: ${fmt(cur.chisq, 4)}  (N = ${cur.chisq_n}, ${windowText()}; manual values, not a fit)`);
+  const fit = fitNow();
+  if (fit) lines.push(`Fit: ${fit.engine}, ${fit.method}${fit.cancelled ? ' (cancelled)' : ''}; χ²ᵣ = ${fmt(fit.chisq_reduced, 4)} (N = ${fit.n_points}, dof = ${fit.dof}, ${windowText()})` +
+    (fit.at_bound.length ? `; at bound: ${fit.at_bound.join(', ')}` : ''));
+  else if (scored) lines.push(`χ²/N: ${fmt(cur.chisq, 4)}  (N = ${cur.chisq_n}, ${windowText()}; manual values, not a fit)`);
   const rows = paramRows(), w = Math.max(...rows.map(r => r.name.length), 4);
-  lines.push('Parameters:');
-  for (const r of rows) lines.push(`  ${r.name.padEnd(w)}  ${r.value}${r.units ? ' ' + r.units : ''}${r.pd ? '  [' + r.pd + ']' : ''}`);
+  lines.push(fit ? 'Parameters (* = fitted, ± 1σ from BUMPS):' : 'Parameters:');
+  for (const r of rows) lines.push(`  ${(r.fitted ? '*' : ' ') + r.name.padEnd(w)}  ${r.value}${r.unc ? ' ' + r.unc : ''}${r.units ? ' ' + r.units : ''}${r.pd ? '  [' + r.pd + ']' : ''}`);
   return lines.join('\n');
 }
 function summaryHtml() {
@@ -52,11 +61,16 @@ function summaryHtml() {
   let h = `<p style="margin:0 0 4px"><b>${esc(titleLine())}</b></p>`;
   h += `<p style="margin:0 0 6px;color:#4e5d49;font-size:90%">sassafras ${esc($('versions').dataset.version || '')} · ${esc(new Date().toLocaleString())}`;
   if (ds) h += `<br>${esc(ds.source)} (${esc(ds.resolution)})`;
-  if (scored) h += '<br>Manual (chi-by-eye) values, not a fit; no uncertainties.';
+  const fit = fitNow();
+  if (fit) h += `<br>BUMPS fit (${esc(fit.engine)}, ${esc(fit.method)}${fit.cancelled ? ', cancelled' : ''}): χ²ᵣ = ${fmt(fit.chisq_reduced, 4)}, N = ${fit.n_points}, dof = ${fit.dof}, ${esc(windowText())}` +
+    (fit.at_bound.length ? `; at bound: ${esc(fit.at_bound.join(', '))}` : '') + '. Bold = fitted; ± is 1σ.';
+  else if (scored) h += '<br>Manual (chi-by-eye) values, not a fit; no uncertainties.';
   h += '</p><table style="border-collapse:collapse;font-size:90%"><tr>' +
-    ['Parameter', 'Value', 'Units', 'Polydispersity'].map(t => `<th ${cell}>${t}</th>`).join('') + '</tr>';
+    ['Parameter', 'Value', ...(fit ? ['±'] : []), 'Units', 'Polydispersity'].map(t => `<th ${cell}>${t}</th>`).join('') + '</tr>';
   for (const r of paramRows()) {
-    h += `<tr><td ${cell}>${r.changed ? '<b>' : ''}${esc(r.name)}${r.changed ? '</b>' : ''}</td><td ${cell}>${esc(r.value)}</td>` +
+    const strong = fit ? r.fitted : r.changed;
+    h += `<tr><td ${cell}>${strong ? '<b>' : ''}${esc(r.name)}${strong ? '</b>' : ''}</td><td ${cell}>${esc(r.value)}</td>` +
+      (fit ? `<td ${cell}>${esc(r.unc.replace('± ', ''))}</td>` : '') +
       `<td ${cell}>${esc(r.units)}</td><td ${cell}>${esc(r.pd)}</td></tr>`;
   }
   return h + '</table>';
