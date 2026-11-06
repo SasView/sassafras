@@ -13,7 +13,7 @@ EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 @pytest.fixture(scope="module")
 def setup():
     s = Session()
-    g = Guesser(s)
+    g = Guesser(s, library=False)      # these tests cover the ml-sans network path
     if not g.folder:
         pytest.skip("bundled ML model not found")
     ds = s.load_path(str(EXAMPLES / "sphere_hardsphere.xml"))[0][0]
@@ -21,7 +21,7 @@ def setup():
 
 
 def test_bundled_model_is_found_and_override_falls_back():
-    g = Guesser(Session(), "/nonexistent/ml-sans")
+    g = Guesser(Session(), "/nonexistent/ml-sans", library=False)
     assert g.folder == BUNDLED.resolve() and g.model_path == BUNDLED.resolve() / "model.pt"
 
 

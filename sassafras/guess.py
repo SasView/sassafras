@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from .backend import Session, UserError
+from .library import Library
 
 PRIOR_DRAWS = 300          # upper limit on parameter sets tried per model
 PRIOR_BUDGET_S = 4.0       # ... and on time spent
@@ -38,6 +39,10 @@ TOP = 6
 POLISH_TOP = 3             # best prior draws given a short LM polish (when bumps is installed)
 POLISH_BUDGET_S = 6.0
 SEARCH_PD_N = 15
+LIBRARY_SCAN_S = 3.0       # polydispersity scan over the library matches
+PD_EVAL_MAX_S = 0.4        # skip polydispersity when one evaluation with it is slower than this
+SLOW_EVAL_S = 0.25         # a kernel slower than this gets one library match, no PD scan
+SLOW_POLISH_S = 3.0
 WORKER = Path(__file__).with_name("_guess_worker.py")
 WORKER_TIMEOUT_S = 120           # PD integration points while searching (the UI then uses 35)
 
@@ -55,8 +60,11 @@ def _candidates(explicit: str | None) -> list[Path]:
 
 
 class Guesser:
-    def __init__(self, session: Session, folder: str | None = None):
+    def __init__(self, session: Session, folder: str | None = None, library: str | None = None):
         self.session = session
+        self.library_dir = Library.find(library)
+        self._library = None
+        self._last_match = None          # (key, {model: [(chi, row), ...]}) of the last library lookup
         self.folder = next((p.resolve() for p in _candidates(folder) if (p / "sans_ml").is_dir()), None)
         self.model_path = None
         if self.folder:
@@ -67,6 +75,20 @@ class Guesser:
 
     # --------------------------------------------------------------- status
     def status(self) -> dict:
+        net = self._network_status()
+        if self.library_dir:
+            label = f"library {self.library_dir.parent.name}/{self.library_dir.name}"
+            return {"available": True, "source": "library", "folder": str(self.library_dir),
+                    "label": label, "network": net["available"]}
+        return {**net, "source": "network", "network": net["available"]}
+
+    def library(self) -> Library:
+        with self.lock:
+            if self._library is None:
+                self._library = Library(self.library_dir)
+            return self._library
+
+    def _network_status(self) -> dict:
         if not self.folder:
             return {"available": False, "reason": f"the bundled ML model folder {BUNDLED} is missing "
                     "(reinstall sassafras, or start it with --ml-sans /path/to/ml-sans)"}
@@ -95,7 +117,7 @@ class Guesser:
 
     def _rank(self, q, i, di, top):
         """Run the network in a child process (see _guess_worker) and return its ranking."""
-        st = self.status()
+        st = self._network_status()
         if not st["available"]:
             raise UserError(st["reason"])
         env = dict(os.environ, KMP_DUPLICATE_LIB_OK="TRUE")
@@ -123,6 +145,8 @@ class Guesser:
             raise UserError("Select an active dataset to guess a model for.")
         t0 = time.perf_counter()
         mask = self.session._window_mask(ds, req.get("window"))
+        if self.library_dir and req.get("source", "library") == "library":
+            return self._suggest_library(req, ds, mask, t0)
         ranked = self._rank(ds.q[mask], ds.i[mask], None if ds.di is None else ds.di[mask],
                             int(req.get("top", TOP)))
         listing = {m["name"]: m for m in self.session.catalogue.listing()["form_factors"]}
@@ -146,10 +170,157 @@ class Guesser:
                                                      "structure_factor": first["structure_factor"]})
         return result
 
+    # ------------------------------------------------------ library lookup
+    def _match(self, ds, mask, window, model=None):
+        key = (ds.id, hash(ds.q[mask].tobytes() + ds.i[mask].tobytes()), json.dumps(window))
+        if self._last_match and self._last_match[0] == key and (model is None or model in self._last_match[1]):
+            return self._last_match[1]
+        try:
+            best = self.library().match(ds.q[mask], ds.i[mask], None if ds.di is None else ds.di[mask],
+                                        model=model, per_model=POLISH_TOP)
+        except ValueError as exc:
+            raise UserError(f"The curve library can't use this curve: {exc}") from None
+        if model is None:
+            self._last_match = (key, best)
+        return best
+
+    def _suggest_library(self, req, ds, mask, t0):
+        best = self._match(ds, mask, req.get("window"))
+        if not best:
+            raise UserError("No library curve could be matched to this dataset.")
+        listing = {m["name"]: m for m in self.session.catalogue.listing()["form_factors"]}
+        top = list(best.items())[: int(req.get("top", TOP))]
+        chi0 = top[0][1][0][0]
+        out = []
+        for name, hits in top:
+            entry = {"model": name, "form": name, "structure_factor": None, "chisq_n": hits[0][0],
+                     "weight": (chi0 / hits[0][0]) if hits[0][0] > 0 else 1.0,
+                     "source": "library", "loadable": name in listing, "reason": ""}
+            if not entry["loadable"]:
+                entry["reason"] = "not in this sasmodels version"
+            out.append(entry)
+        lib = self.library()
+        result = {"suggestions": out, "source": "library", "library": lib.label,
+                  "elapsed_s": time.perf_counter() - t0, "used_points": int(mask.sum()), "window": req.get("window")}
+        first = next((x for x in out if x["loadable"]), None)
+        if first and req.get("with_values", True):
+            result["values"] = self._library_values({**req, "model": first["form"]})
+        return result
+
+    def _library_values(self, req: dict) -> dict:
+        """Start from the best-matching library curves of one model: their stored
+        structural parameters, default SLDs, a short polydispersity scan, the
+        linear scale/background solve and the usual LM polish."""
+        s, t0 = self.session, time.perf_counter()
+        model = req.get("model", "")
+        ds = s.datasets.get(req.get("dataset") or "")
+        if ds is None:
+            raise UserError("Select an active dataset first.")
+        mask = s._window_mask(ds, req.get("window"))
+        hits = self._match(ds, mask, req.get("window"), model=model).get(model)
+        if not hits:
+            return {"model": model, "structure_factor": None, "params": {}, "pd": {}, "draws": 0,
+                    "chisq_n": None, "note": f"{model} is not in the curve library: starting from sasmodels defaults"}
+        lib = self.library()
+        w = 1.0 / ds.di[mask] if ds.di is not None else 1.0 / np.maximum(np.abs(ds.i[mask]), 1e-30)
+        y = ds.i[mask]
+        ranked, slow = [], False
+        for _, row in hits:
+            if slow or (ranked and time.perf_counter() - t0 > LIBRARY_SCAN_S):
+                break
+            stored = lib.curve_params(row)
+            base = s.describe(model, None)
+            ctrl = {}
+            for p in base["parameters"]:
+                if p["kind"] == "control" and p["name"] in stored:
+                    v = int(round(stored[p["name"]]))
+                    lo, hi = p["min"], p["max"]
+                    ctrl[p["name"]] = int(min(max(v, lo if lo is not None else v), hi if hi is not None else v))
+            desc = s.describe(model, None, ctrl) if ctrl else base
+            params, varied, limits = {}, set(), {}
+            for p in desc["parameters"]:
+                name = p["name"]
+                limits[name] = (p["min"], p["max"])
+                if p["kind"] == "control":
+                    params[name] = float(ctrl.get(name, p["default"]))
+                    continue
+                if p["kind"] != "float":
+                    continue
+                params[name] = p["default"]
+                v = stored.get(name)
+                if v is not None and math.isfinite(v):
+                    lo, hi = p["min"], p["max"]
+                    if (lo is None or v >= lo) and (hi is None or v <= hi):
+                        params[name] = float(v)
+                        varied.add(name)
+            params["scale"], params["background"] = 1.0, 0.0
+            pd_names = [p["name"] for p in desc["parameters"] if p.get("polydisperse")
+                        and p["name"] in set(lib.meta.get("pd", {}).get(model, []))]
+            best = None
+            for width in ((0.0, 0.1, 0.2, 0.3) if pd_names else (0.0,)):
+                if width and time.perf_counter() - t0 > LIBRARY_SCAN_S:
+                    break
+                pd = {k: {"width": width, "type": "schulz", "n": SEARCH_PD_N} for k in pd_names} if width else {}
+                scored = self._score(model, None, ds, mask, w, y, params, pd)
+                if not width:
+                    t1 = time.perf_counter()                   # time a second, compiled call
+                    self._score(model, None, ds, mask, w, y, params, {})
+                    took = time.perf_counter() - t1
+                    if took > SLOW_EVAL_S:
+                        slow = True     # a slow kernel: keep this one match, without polydispersity
+                    # PD cost grows as n^k: keep only as many PD parameters as stay fast
+                    while pd_names and took * SEARCH_PD_N ** len(pd_names) > PD_EVAL_MAX_S:
+                        pd_names = pd_names[:-1]
+                if slow:
+                    if scored:
+                        best = (scored[0], {**params, "scale": scored[1], "background": scored[2]}, {})
+                    break
+                if width and not pd_names:
+                    break
+                if scored and (best is None or scored[0] < best[0]):
+                    best = (scored[0], {**params, "scale": scored[1], "background": scored[2]}, pd)
+            if best:
+                ranked.append((*best, varied))
+        if not ranked:
+            return {"model": model, "structure_factor": None, "params": {}, "pd": {}, "draws": len(hits),
+                    "chisq_n": None, "note": "the library matches did not evaluate: starting from sasmodels defaults"}
+        ranked.sort(key=lambda r: r[0])
+        # SLDs are not stored in the library; when contrast ratios shape the curve
+        # (two or more particle SLDs) let the polish move them within the generator's range
+        slds = [p["name"] for p in desc["parameters"] if p["kind"] == "float"
+                and p["name"].startswith("sld") and "solvent" not in p["name"]]
+        bounds = {k: (-0.56, 8.0) for k in slds} if len(slds) >= 2 else None
+        out = self._finish(model, None, ds, ranked, req, t0, limits, None if slow else bounds,
+                           polish_s=SLOW_POLISH_S if slow else POLISH_BUDGET_S)
+        out.update(draws=len(hits), source="library", library=lib.label,
+                   controls={k: int(v) for k, v in out["params"].items() if k in ctrl})
+        return out
+
+    def _score(self, model, sf, ds, mask, w, y, params, pd):
+        """χ²/N after the weighted linear scale/background solve, or None."""
+        try:
+            out = self.session.evaluate({"model": model, "structure_factor": sf, "params": params, "pd": pd,
+                                         "dataset": ds.id})
+        except UserError:
+            return None
+        shape = np.array([np.nan if v is None else v for v in out["theory"]])[mask]
+        ok = np.isfinite(shape)
+        if ok.sum() < 5 or not np.any(shape[ok] != 0):
+            return None
+        A = np.c_[shape[ok], np.ones(ok.sum())] * w[ok, None]
+        (sc, bg), *_ = np.linalg.lstsq(A, y[ok] * w[ok], rcond=None)
+        if not (sc > 0 and math.isfinite(sc)):
+            return None
+        return float(np.mean(((y[ok] - sc * shape[ok] - bg) * w[ok]) ** 2)), float(sc), float(bg)
+
     # ------------------------------------------------------ starting values
     def starting_values(self, req: dict) -> dict:
-        """Best of up to PRIOR_DRAWS prior draws, scored by χ²/N after the linear
+        """Starting values for one model: from the curve library when it is in use
+        (``source`` "library", the default when one is installed), else the best of
+        up to PRIOR_DRAWS ml-sans prior draws, scored by χ²/N after the linear
         scale/background solve. Returns params, pd, controls and the score."""
+        if self.library_dir and req.get("source", "library") == "library" and not req.get("structure_factor"):
+            return self._library_values(req)
         self._load_priors()
         s = self.session
         model, sf = req.get("model", ""), req.get("structure_factor") or None
@@ -190,20 +361,10 @@ class Guesser:
             params["scale"], params["background"] = 1.0, 0.0
             pd = {k[:-3]: {"width": float(v), "type": pd_raw.get(f"{k[:-3]}_pd_type", "gaussian"), "n": SEARCH_PD_N}
                   for k, v in pd_raw.items() if k.endswith("_pd") and k[:-3] in params}
-            try:
-                out = s.evaluate({"model": model, "structure_factor": sf, "params": params, "pd": pd,
-                                  "dataset": ds.id})
-            except UserError:
+            scored = self._score(model, sf, ds, mask, w, y, params, pd)
+            if scored is None:
                 continue
-            shape = np.array([np.nan if v is None else v for v in out["theory"]])[mask]
-            ok = np.isfinite(shape)
-            if ok.sum() < 5 or not np.any(shape[ok] != 0):
-                continue
-            A = np.c_[shape[ok], np.ones(ok.sum())] * w[ok, None]
-            (sc, bg), *_ = np.linalg.lstsq(A, y[ok] * w[ok], rcond=None)
-            if not (sc > 0 and math.isfinite(sc)):
-                continue
-            chi = float(np.mean(((y[ok] - sc * shape[ok] - bg) * w[ok]) ** 2))
+            chi, sc, bg = scored
             varied = {k for k, v in p.items() if k in params and isinstance(v, float)}
             ranked.append((chi, {**params, "scale": float(sc), "background": float(bg)}, pd, varied))
             ranked.sort(key=lambda r: r[0])
@@ -211,15 +372,23 @@ class Guesser:
         if not ranked:
             return {"model": model, "structure_factor": sf, "params": {}, "pd": {}, "draws": tried,
                     "chisq_n": None, "note": "no prior draw gave a usable curve: starting from sasmodels defaults"}
+        out = self._finish(model, sf, ds, ranked, req, t0, limits)
+        out["draws"] = tried
+        return out
+
+    def _finish(self, model, sf, ds, ranked, req, t0, limits, bounds=None, polish_s=POLISH_BUDGET_S):
+        """LM-polish the best few candidates and report the winner with the UI's PD integration."""
+        s = self.session
         chi, params, pd, _ = ranked[0]
         polished = False
         if req.get("polish", True):
             t1 = time.perf_counter()
             for k, (c0, p0, pd0, varied) in enumerate(ranked):
-                if k and time.perf_counter() - t1 > POLISH_BUDGET_S:
+                if k and time.perf_counter() - t1 > polish_s:
                     break
-                left = POLISH_BUDGET_S - (time.perf_counter() - t1)
-                out = self._polish(model, sf, ds, p0, pd0, varied, limits, req.get("window"), max(left, 0.5))
+                left = polish_s - (time.perf_counter() - t1)
+                out = self._polish(model, sf, ds, p0, pd0, varied, limits, req.get("window"), max(left, 0.5),
+                                   bounds=bounds)
                 if out and out[0] < chi:
                     chi, params, pd = out
                     polished = True
@@ -228,19 +397,20 @@ class Guesser:
             ev = s.evaluate({"model": model, "structure_factor": sf, "params": params, "pd": pd,
                              "dataset": ds.id, "window": req.get("window")})
             chi = ev.get("chisq", chi)
-        return {"model": model, "structure_factor": sf, "params": params, "pd": pd, "draws": tried,
+        return {"model": model, "structure_factor": sf, "params": params, "pd": pd,
                 "chisq_n": chi, "polished": polished, "elapsed_s": time.perf_counter() - t0, "note": ""}
 
-    def _polish(self, model, sf, ds, params, pd, varied, limits, window, budget_s=POLISH_BUDGET_S):
+    def _polish(self, model, sf, ds, params, pd, varied, limits, window, budget_s=POLISH_BUDGET_S, bounds=None):
         """Short bounded LM over the parameters the prior varied (plus scale and
-        background) from the best draw. Skipped silently without bumps."""
+        background, and any explicit ``bounds``) from the best draw. Skipped
+        silently without bumps."""
         from . import fit as fitting
         if not fitting.AVAILABLE or ds.di is None:
             return None
-        free = {}
+        free = {k: list(b) for k, b in (bounds or {}).items() if k in params and b[0] < params[k] < b[1]}
         for k in varied | {"scale", "background"}:
             v = params.get(k)
-            if v is None or k.startswith("sld") or k.endswith("_mode"):
+            if v is None or k in free or k.startswith("sld") or k.endswith("_mode"):
                 continue
             lo, hi = limits.get(k, (None, None))
             if k == "background":

@@ -1,17 +1,19 @@
 'use strict';
-/* "Guess": rank sasmodels models for the active dataset with the ml-sans
-   network, load the top suggestion with starting values from a prior search,
-   and keep the ranked list so another suggestion can be loaded with one click. */
+/* "Guess": rank sasmodels models for the active dataset, either by matching
+   it against a curve library (SAS-55M-20k, when its index is installed) or with
+   the ml-sans network, load the top suggestion with starting values, and keep
+   the ranked list so another suggestion can be loaded with one click. */
 
-const G = { available: false, reason: '', result: null, loaded: null, busy: false };
+const G = { available: false, reason: '', source: 'network', result: null, loaded: null, busy: false };
 
 function onGuessState(st) {
   const g = st.guess || {};
-  G.available = !!g.available; G.reason = g.reason || '';
+  G.available = !!g.available; G.reason = g.reason || ''; G.source = g.source || 'network';
   // stays clickable when unavailable, so a click can say why
   $('guess').classList.toggle('unavailable', !G.available);
-  $('guess').title = G.available ? 'Ask the ml-sans network which sasmodels model fits the active dataset (inside the χ² window), and load the top suggestion with starting values'
-    : `Guess unavailable: ${G.reason}`;
+  $('guess').title = !G.available ? `Guess unavailable: ${G.reason}`
+    : G.source === 'library' ? 'Match the active dataset (inside the χ² window) against the SAS-55M-20k curve library, and load the best-matching model with the parameters of its closest curves'
+    : 'Ask the ml-sans network which sasmodels model fits the active dataset (inside the χ² window), and load the top suggestion with starting values';
 }
 
 function guessRequest() {
@@ -26,7 +28,8 @@ function renderGuess() {
   box.replaceChildren();
   const ds = S.datasets.find(d => d.id === r.dataset);
   const head = el('div', { class: 'ghead' });
-  head.append(el('span', {}, `ML suggestions for ${ds ? ds.label : 'dataset'}`));
+  const lib = r.source === 'library';
+  head.append(el('span', {}, `${lib ? 'Library matches' : 'ML suggestions'} for ${ds ? ds.label : 'dataset'}`));
   const x = el('button', { title: 'Close', 'aria-label': 'Close suggestions' }, '✕');
   x.onclick = () => { G.result = null; renderGuess(); };
   head.append(x); box.append(head);
@@ -34,24 +37,32 @@ function renderGuess() {
   for (const sgn of r.suggestions) {
     const li = el('li', { class: sgn.loadable ? 'load' : 'off', title: sgn.loadable ? `Load ${sgn.model} with starting values` : sgn.reason });
     if (G.loaded === sgn.model) li.classList.add('current');
-    li.append(el('span', { class: 'gname' }, sgn.model), el('span', { class: 'gp' }, `${(100 * sgn.probability).toFixed(sgn.probability < 0.1 ? 1 : 0)}%`));
-    const bar = el('span', { class: 'gbar' }); const fill = el('i'); fill.style.width = `${Math.max(1, 100 * sgn.probability)}%`; bar.append(fill); li.append(bar);
+    const score = lib ? fmt(sgn.chisq_n, 2) : `${(100 * sgn.probability).toFixed(sgn.probability < 0.1 ? 1 : 0)}%`;
+    const frac = lib ? sgn.weight : sgn.probability;
+    if (lib) li.title = sgn.loadable ? `Load ${sgn.model} from its closest library curves (curve χ²/N ${fmt(sgn.chisq_n, 3)})` : sgn.reason;
+    li.append(el('span', { class: 'gname' }, sgn.model), el('span', { class: 'gp' }, score));
+    const bar = el('span', { class: 'gbar' }); const fill = el('i'); fill.style.width = `${Math.max(1, 100 * frac)}%`; bar.append(fill); li.append(bar);
     if (sgn.loadable) li.onclick = () => loadSuggestion(sgn);
     ol.append(li);
   }
   box.append(ol);
-  box.append(el('div', { class: 'gnote' }, 'Probabilities from the network; treat the top 3 as the answer. Click a row to load it. Starting values come from the ml-sans priors (plus a short LM polish when bumps is installed): a starting point, not a final fit.'));
+  box.append(el('div', { class: 'gnote' }, lib
+    ? `Shape χ²/N of each model's closest curve in ${r.library || 'the library'}. Click a row to load it. Starting values: that curve's parameters, default SLDs, a PD scan and a short LM polish.`
+    : 'Probabilities from the network; treat the top 3 as the answer. Click a row to load it. Starting values come from the ml-sans priors (plus a short LM polish when bumps is installed): a starting point, not a final fit.'));
 }
 
 async function applySuggestion(sgn, v) {
-  const preset = { params: v.params || {}, pd: v.pd || {}, ranges: {}, controls: {} };
+  const preset = { params: v.params || {}, pd: v.pd || {}, ranges: {}, controls: v.controls || {} };
   delete S.memory[sgn.structure_factor ? `${sgn.form}@${sgn.structure_factor}` : sgn.form];
   await selectModel(sgn.form, sgn.structure_factor || '', false, preset);
   G.loaded = sgn.model; renderGuess();
-  const how = v.draws && v.chisq_n !== null
+  const how = v.source === 'library' && v.chisq_n !== null
+    ? `starting values from its ${v.draws} closest library curve${v.draws > 1 ? 's' : ''}${v.polished ? ' + short LM polish' : ''} (χ²/N ${fmt(v.chisq_n, 3)}; a starting point, not a final fit)`
+    : v.draws && v.chisq_n !== null
     ? `starting values: best of ${v.draws} prior draws${v.polished ? ' + short LM polish' : ''} (χ²/N ${fmt(v.chisq_n, 3)}; a starting point, not a final fit)`
     : (v.note || 'sasmodels defaults');
-  setStatus(`Loaded ML suggestion ${sgn.model} (${(100 * sgn.probability).toFixed(0)}%); ${how}.`);
+  setStatus(sgn.source === 'library' ? `Loaded library match ${sgn.model}; ${how}.`
+    : `Loaded ML suggestion ${sgn.model} (${(100 * sgn.probability).toFixed(0)}%); ${how}.`);
 }
 
 async function loadSuggestion(sgn) {
@@ -69,7 +80,8 @@ async function runGuess() {
   if (!ds) { setStatus('Select an active dataset to guess a model for.', 'error'); return; }
   if (G.busy) return;
   G.busy = true; $('guess').disabled = true;
-  setStatus('Asking the ML model… (the first call loads PyTorch and can take a few seconds)');
+  setStatus(G.source === 'library' ? 'Matching against the curve library…'
+    : 'Asking the ML model… (the first call loads PyTorch and can take a few seconds)');
   try {
     const r = await api('/api/guess', guessRequest());
     G.result = { ...r, dataset: ds.id }; G.loaded = null; renderGuess();

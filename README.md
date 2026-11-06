@@ -182,6 +182,42 @@ the Fit toggle.
   inter-particle structure or describe no finite particle. This is the same
   rule ml-sans uses, so its P@S suggestions load.
 
+### Curve library (SAS-55M-20k)
+
+When a curve-library index is installed, **Guess** uses it instead of the
+network. SAS-55M-20k (the Sasformer training set) holds 1.1 million noise-free
+sasmodels curves: 55 form factors × 20,000 random parameter sets on 512 Q
+points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
+
+* **Ranking:** every library curve is interpolated onto the active dataset's Q
+  points inside the χ² window and given its own weighted least-squares scale
+  and background, so only the shape counts. The list shows each model's best
+  χ²/N (unsmeared, so it is a ranking rather than a fit quality). The match
+  takes 1–3 s.
+* **Starting values:** the three closest curves of the chosen model supply
+  their stored parameters. SLDs and polydispersity are not stored, so
+  sassafras keeps the default SLDs (scale absorbs the contrast), scans Schulz
+  polydispersity widths 0–0.3 on the parameters the generator made
+  polydisperse (fewer of them for slow kernels), then runs the short LM
+  polish. For models whose shape depends on contrast ratios (two or more
+  particle SLDs, e.g. core–shell), the polish also moves those SLDs.
+* **Limits:** there are no structure factors in the library apart from
+  `binary_hard_sphere`, so a P×S curve matches the closest form factor alone
+  (add the S(Q) yourself afterwards).
+  Where the generator coupled parameters or depended on the unknown SLDs, the
+  stored values are only approximate starting points.
+* **Setup:** download SAS-55M-20k, then build the index once (about 20 s; it
+  needs `pyarrow`, `pip install -e ".[library]"`):
+
+  ```bash
+  python -m sassafras.library build ~/Downloads/sas-55m-20k
+  ```
+
+  This writes about 400 MB to `sassafras/ml/library`, which is git-ignored.
+  Use `--out` to put it elsewhere and start sassafras with `--library DIR` (or
+  set `SASSAFRAS_LIBRARY`). Without an index, Guess uses the ml-sans network as
+  before.
+
 ## IQuana notebook
 
 **IQuana notebook ↗** (top right of the plot panel) writes a Jupyter notebook with
@@ -272,6 +308,7 @@ sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel
 sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
 sassafras/guess.py     Guess: ml-sans model suggestion + prior-search starting values
 sassafras/_guess_worker.py  child process that runs the ml-sans network (torch)
+sassafras/library.py   curve-library index (build) and shape matching for Guess
 sassafras/ml/          bundled model.pt + sans_ml inference code (copied from ml-sans)
 sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
                        fitting.js (Fit toggle and controls), notebook.js, guess.js, app.css, logos + favicon

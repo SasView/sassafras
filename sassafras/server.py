@@ -40,9 +40,9 @@ def versions() -> dict:
 
 
 def make_handler(session: Session, token: str, startup: dict, notebook_dir: str | None = None,
-                 ml_sans: str | None = None):
+                 ml_sans: str | None = None, library: str | None = None):
     fits = fitting.FitManager(session)
-    guesser = mlguess.Guesser(session, ml_sans)
+    guesser = mlguess.Guesser(session, ml_sans, library)
     exporter = nbexport.Exporter(session, notebook_dir)
 
     class Handler(BaseHTTPRequestHandler):
@@ -170,6 +170,9 @@ def main(argv=None):
                         help="folder for exported IQuana notebooks (default: ~/sassafras_notebooks)")
     parser.add_argument("--ml-sans", default=None,
                         help="full ml-sans folder to use for Guess instead of the model bundled in sassafras/ml")
+    parser.add_argument("--library", default=None,
+                        help="curve-library index for Guess (default: sassafras/ml/library, built with "
+                             "python -m sassafras.library build /path/to/sas-55m-20k)")
     parser.add_argument("--check", action="store_true",
                         help="load files, compile and evaluate the initial model, print a summary and exit")
     args = parser.parse_args(argv)
@@ -209,12 +212,16 @@ def main(argv=None):
         return
 
     token = secrets.token_hex(24)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(session, token, startup, args.notebook_dir, args.ml_sans))
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(session, token, startup, args.notebook_dir,
+                                                                       args.ml_sans, args.library))
     server.daemon_threads = True
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"\nsassafras is running at {url}")
-    g = mlguess.Guesser(session, args.ml_sans).status()
-    print("Guess: ready (" + g["folder"] + ")" if g["available"] else "Guess: unavailable - " + g["reason"])
+    g = mlguess.Guesser(session, args.ml_sans, args.library).status()
+    if not g["available"]:
+        print("Guess: unavailable - " + g["reason"])
+    else:
+        print(f"Guess: ready, {'curve library' if g['source'] == 'library' else 'ML network'} ({g['folder']})")
     print("Everything runs locally. Stop with Ctrl+C or the Stop button in the page.")
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()

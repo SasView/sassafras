@@ -16,6 +16,7 @@ dependencies = ["sasmodels>=1.0.7", "sasdata>=0.9", "numpy"]
 fit = ["bumps>=0.9"]
 notebook = ["iquana>=0.5", "jupyterlab"]
 guess = ["torch>=2.5", "scipy", "iquana>=0.5"]
+library = ["pyarrow"]       # only to build the curve-library index
 test = ["pytest", "bumps>=0.9"]
 
 [project.scripts]
