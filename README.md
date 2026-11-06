@@ -10,9 +10,8 @@ no optimiser; the only automatic step is a one-click linear solve for scale
 and background. Switch **Fit** on to refine the chi-by-eye starting point
 with BUMPS (needs the optional `bumps` package).
 
-It is a generalised version of `elliptical_cylinder_gui`: the same local
-browser GUI with no external JavaScript, now working with any model and any
-data file, and it runs without data loaded.
+It is a generalised local browser GUI with no external JavaScript, working with 
+any model and any (including no) data file.
 
 ## Run
 
