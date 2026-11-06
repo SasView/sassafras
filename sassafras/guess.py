@@ -9,10 +9,11 @@ each against the data (sassafras' own resolution-smeared evaluation with the
 closed-form scale/background solve) and returns the best. That is a quick
 prior search, not a fit; refine with the sliders or the Fit toggle.
 
-ml-sans is found, in order, from ``--ml-sans``, ``$SASSAFRAS_ML_SANS``, an
-``ml-sans`` folder next to the sassafras folder, or one in the current
-directory. It needs ``torch`` (plus the ml-sans requirements) in the same
-Python environment; without them the Guess button explains what is missing.
+The trained model and the parts of ``sans_ml`` needed to run it are bundled in
+``sassafras/ml``. ``--ml-sans`` or ``$SASSAFRAS_ML_SANS`` can point at a full
+ml-sans folder instead (e.g. to try a newly trained model before copying it in).
+It needs ``torch``, ``scipy`` and ``iquana`` in the same Python environment;
+without them the Guess button explains what is missing.
 """
 from __future__ import annotations
 
@@ -41,15 +42,16 @@ WORKER = Path(__file__).with_name("_guess_worker.py")
 WORKER_TIMEOUT_S = 120           # PD integration points while searching (the UI then uses 35)
 
 
+BUNDLED = Path(__file__).with_name("ml")         # sans_ml/ (inference subset) + model.pt
+
+
 def _candidates(explicit: str | None) -> list[Path]:
-    here = Path(__file__).resolve().parents[1]       # the sassafras repo folder
     out = []
     if explicit:
         out.append(Path(explicit).expanduser())
     if os.environ.get("SASSAFRAS_ML_SANS"):
         out.append(Path(os.environ["SASSAFRAS_ML_SANS"]).expanduser())
-    out += [here.parent / "ml-sans", Path.cwd() / "ml-sans", Path.cwd().parent / "ml-sans"]
-    return out
+    return out + [BUNDLED]
 
 
 class Guesser:
@@ -66,14 +68,14 @@ class Guesser:
     # --------------------------------------------------------------- status
     def status(self) -> dict:
         if not self.folder:
-            return {"available": False, "reason": "the ml-sans folder was not found; put it next to the "
-                    "sassafras folder or start sassafras with --ml-sans /path/to/ml-sans"}
+            return {"available": False, "reason": f"the bundled ML model folder {BUNDLED} is missing "
+                    "(reinstall sassafras, or start it with --ml-sans /path/to/ml-sans)"}
         if not self.model_path:
             return {"available": False, "reason": f"No model.pt in {self.folder}"}
         if importlib.util.find_spec("torch") is None:
             return {"available": False, "reason": "PyTorch is not installed in the Python running sassafras. "
-                    f"Install the ml-sans requirements there: {sys.executable} -m pip install -r "
-                    f"{self.folder / 'requirements.txt'}  (then restart sassafras)"}
+                    f"Install it there: {sys.executable} -m pip install torch scipy iquana  "
+                    "(then restart sassafras)"}
         return {"available": True, "folder": str(self.folder), "model": str(self.model_path)}
 
     def _load_priors(self):

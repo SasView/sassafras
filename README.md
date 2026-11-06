@@ -157,16 +157,27 @@ the Fit toggle.
 * Two-component suggestions (`A+B`) are listed but can't be loaded yet.
 * As the ml-sans README notes, the network does well on simulated-like curves
   and less well on measured data, so treat the top three as the answer.
-* Setup: keep the `ml-sans` folder next to the sassafras folder, or pass
-  `--ml-sans /path/to/ml-sans` (or set `SASSAFRAS_ML_SANS`). Then install its
-  requirements (`torch`, `h5py`, `scipy`, `iquana`) in the same environment as
-  sassafras, e.g. `<that python> -m pip install -r ml-sans/requirements.txt`.
-  Without them the Guess button is dimmed; clicking it shows what is missing,
+* Setup: the trained model is bundled, so only the Python packages are
+  needed: `pip install -e ".[guess]"` (`torch`, `scipy`, `iquana`) in the same
+  environment as sassafras. Without them the Guess button is dimmed; clicking it shows what is missing,
   and the terminal prints a `Guess: ready` or `Guess: unavailable` line at
   start-up.
 * The network runs in a short-lived child process, so PyTorch is never loaded
   into the sassafras server. (On macOS, PyTorch and numpy/sasmodels can bring
   conflicting OpenMP runtimes, which aborts the process that loads both.)
+* `sassafras/ml` holds `model.pt` and the inference subset of ml-sans's
+  `sans_ml` package (`__init__`, `catalogue`, `encode`, `net`, `predict`,
+  `priors`, `simulate`); training and data-generation code stays in ml-sans.
+  After retraining, refresh the copy from the ml-sans folder:
+
+  ```bash
+  cp ../ml-sans/model.pt sassafras/ml/
+  for f in __init__ catalogue encode net predict priors simulate; do
+    cp ../ml-sans/sans_ml/$f.py sassafras/ml/sans_ml/; done
+  ```
+
+  To try a new model without copying, start with `--ml-sans /path/to/ml-sans`
+  (or set `SASSAFRAS_ML_SANS`).
 * S(Q) can now be added to any form factor except those that already include
   inter-particle structure or describe no finite particle. This is the same
   rule ml-sans uses, so its P@S suggestions load.
@@ -261,6 +272,7 @@ sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel
 sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
 sassafras/guess.py     Guess: ml-sans model suggestion + prior-search starting values
 sassafras/_guess_worker.py  child process that runs the ml-sans network (torch)
+sassafras/ml/          bundled model.pt + sans_ml inference code (copied from ml-sans)
 sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
                        fitting.js (Fit toggle and controls), notebook.js, guess.js, app.css, logos + favicon
 ```

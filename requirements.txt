@@ -6,7 +6,7 @@ bumps==1.0.3   # optional: enables the Fit toggle
 # optional: IQuana notebook export
 # iquana==0.5.0
 # jupyterlab
-# optional: Guess button (with the ml-sans folder next to sassafras)
+# optional: Guess button (model bundled in sassafras/ml)
 # torch>=2.5
-# h5py
 # scipy
+# iquana==0.5.0

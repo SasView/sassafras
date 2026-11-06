@@ -1,12 +1,11 @@
-"""Guess button. Needs the ml-sans folder (found next to sassafras, via
-$SASSAFRAS_ML_SANS, or ./ml-sans); the network tests also need torch."""
+"""Guess button, using the model bundled in sassafras/ml; the network tests need torch."""
 import importlib.util
 from pathlib import Path
 
 import pytest
 
 from sassafras.backend import Session, UserError
-from sassafras.guess import Guesser
+from sassafras.guess import BUNDLED, Guesser
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
@@ -16,15 +15,14 @@ def setup():
     s = Session()
     g = Guesser(s)
     if not g.folder:
-        pytest.skip("ml-sans folder not found")
+        pytest.skip("bundled ML model not found")
     ds = s.load_path(str(EXAMPLES / "sphere_hardsphere.xml"))[0][0]
     return s, g, ds
 
 
-def test_missing_folder_is_reported():
+def test_bundled_model_is_found_and_override_falls_back():
     g = Guesser(Session(), "/nonexistent/ml-sans")
-    if g.folder is None:
-        assert not g.status()["available"] and "ml-sans" in g.status()["reason"]
+    assert g.folder == BUNDLED.resolve() and g.model_path == BUNDLED.resolve() / "model.pt"
 
 
 def test_prior_search_finds_the_sphere(setup):

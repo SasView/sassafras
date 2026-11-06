@@ -15,7 +15,7 @@ dependencies = ["sasmodels>=1.0.7", "sasdata>=0.9", "numpy"]
 [project.optional-dependencies]
 fit = ["bumps>=0.9"]
 notebook = ["iquana>=0.5", "jupyterlab"]
-guess = ["torch>=2.5", "h5py", "scipy", "iquana>=0.5"]   # plus the ml-sans folder
+guess = ["torch>=2.5", "scipy", "iquana>=0.5"]
 test = ["pytest", "bumps>=0.9"]
 
 [project.scripts]
@@ -25,4 +25,4 @@ sassafras = "sassafras.server:main"
 packages = ["sassafras"]
 
 [tool.setuptools.package-data]
-sassafras = ["static/*"]
+sassafras = ["static/*", "ml/model.pt", "ml/sans_ml/*.py"]
