@@ -57,7 +57,9 @@ function store() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       model: S.model, sf: S.sf, params: S.params, pd: S.pd, controls: S.controls, ranges: S.ranges,
-      logx: $('logx').checked, logy: $('logy').checked,
+      logx: $('plot-mode').value === 'iq' ? $('logx').checked : logSaved.logx,
+      logy: $('plot-mode').value === 'iq' ? $('logy').checked : logSaved.logy,
+      plotMode: $('plot-mode').value,
       grid: [$('grid-min').value, $('grid-max').value, $('grid-n').value],
     }));
   } catch { /* storage unavailable: fine */ }
@@ -498,12 +500,46 @@ function linTicks(lo, hi, n = 6) {
   const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
   return out;
 }
-const tickLabel = v => { const a = Math.abs(v); return (a !== 0 && (a < 1e-3 || a >= 1e5)) ? v.toExponential(0).replace('e+', 'e') : String(Number(v.toPrecision(4))); };
+const tickLabel = v => { const a = Math.abs(v); return (a !== 0 && (a < 1e-3 || a >= 1e5)) ? Number(v.toPrecision(3)).toExponential().replace('e+', 'e') : String(Number(v.toPrecision(4))); };
 
 function shownSets() { return S.datasets.filter(d => S.visible.has(d.id)); }
 
+/* Plot types. x transforms map Q to the plotted abscissa; y transforms map
+   (Q, I) to the plotted ordinate. Scales, zoom, hover and the χ² window all
+   keep working in Q, so the transforms only touch drawing. */
+const PLOT_MODES = {
+  iq: { xf: q => q, xinv: x => x, yf: (q, i) => i, xlab: 'Q (Å⁻¹)', ylab: u => `I(Q) (${u})`, log: true, zeroY: true },
+  kratky: { xf: q => q, xinv: x => x, yf: (q, i) => q * q * i, xlab: 'Q (Å⁻¹)', ylab: u => `Q²·I(Q) (${u} Å⁻²)`, log: true, zeroY: true },
+  guinier: { xf: q => q * q, xinv: x => Math.sqrt(Math.max(x, 0)), yf: (q, i) => (i > 0 ? Math.log(i) : NaN),
+    xlab: 'Q² (Å⁻²)', ylab: () => 'ln I(Q)', log: false, zeroY: false },
+};
+const plotMode = () => PLOT_MODES[$('plot-mode').value] || PLOT_MODES.iq;
+const logSaved = { logx: true, logy: true };   // I(Q) log choices, restored when returning to I(Q)
+function setPlotMode(mode) {
+  const prev = $('plot-mode').dataset.prev || 'iq';
+  if (prev === 'iq' && mode !== 'iq') { logSaved.logx = $('logx').checked; logSaved.logy = $('logy').checked; }
+  $('plot-mode').value = mode; $('plot-mode').dataset.prev = mode;
+  if (mode === 'iq') { $('logx').checked = logSaved.logx; $('logy').checked = logSaved.logy; }
+  else if (mode === 'kratky') { $('logx').checked = false; $('logy').checked = false; }
+  const can = PLOT_MODES[mode].log;
+  $('logx').disabled = $('logy').disabled = !can;
+  if (!can) { $('logx').checked = false; $('logy').checked = false; }
+  S.view = null;
+}
+function guinierQmax(d) {
+  const n = d.q.length, ok = d.i.map((v, k) => [d.q[k], v]).filter(([, v]) => v > 0);
+  const fallback = d.q[Math.min(n - 1, Math.max(9, Math.floor(n / 4)))];
+  if (ok.length < 8) return fallback;
+  const head = ok.slice(0, 5).map(([, v]) => v).sort((a, b) => a - b), i0 = head[2];
+  let k = ok.findIndex(([, v], j) => j >= 5 && v < i0 * Math.exp(-0.8) && (ok[j + 1]?.[1] ?? 0) < i0 * Math.exp(-0.8));
+  if (k < 0) return fallback;
+  return ok[Math.max(k, 7)][0];
+}
+const transformed = (q, ys) => { const m = plotMode(); return ys.map((y, k) => (y === null ? null : m.yf(q[k], y))); };
+
 function domains() {
-  const logx = $('logx').checked, logy = $('logy').checked;
+  const m = plotMode();
+  const logx = m.log && $('logx').checked, logy = m.log && $('logy').checked;
   const sets = shownSets(), cur = S.current;
   let xs = [];
   for (const d of sets) xs.push(...d.q);
@@ -511,8 +547,15 @@ function domains() {
   xs = xs.filter(v => logx ? v > 0 : Number.isFinite(v));
   if (!xs.length) xs = [1e-3, 0.5];
   let x0 = Math.min(...xs), x1 = Math.max(...xs);
+  if (!S.view?.x && m === PLOT_MODES.guinier) {
+    // Guinier region is at low Q: open where ln I has dropped by ~0.8 from its low-Q value
+    // (a little past Q·Rg ≈ 1.3), else on the lowest quarter of the points.
+    const ref = activeDataset() && S.visible.has(S.activeId) ? activeDataset() : sets[0];
+    if (ref) x1 = guinierQmax(ref);
+  }
   if (S.view?.x) [x0, x1] = S.view.x;
   else if (logx) { const pad = (Math.log10(x1) - Math.log10(x0)) * 0.03 || 0.1; x0 /= 10 ** pad; x1 *= 10 ** pad; }
+  else if (m === PLOT_MODES.guinier) { x0 = 0; x1 = Math.sqrt(x1 * x1 * 1.04); }
   else { const pad = (x1 - x0) * 0.03 || Math.abs(x0) * 0.1 || 1; x0 -= pad; x1 += pad; if (xs.every(v => v >= 0)) x0 = Math.max(x0, 0); }
 
   let y0, y1;
@@ -522,25 +565,26 @@ function domains() {
     const inX = q => q >= x0 && q <= x1;
     for (const d of sets) d.q.forEach((q, i) => {
       if (!inX(q)) return;
-      ys.push(d.i[i]);
-      if (d.di) { ys.push(d.i[i] + d.di[i]); if (!logy || d.i[i] - d.di[i] > 0) ys.push(d.i[i] - d.di[i]); }
+      ys.push(m.yf(q, d.i[i]));
+      if (d.di) { ys.push(m.yf(q, d.i[i] + d.di[i])); if (!logy || d.i[i] - d.di[i] > 0) ys.push(m.yf(q, d.i[i] - d.di[i])); }
     });
-    if (!ys.length && cur) cur.q.forEach((q, i) => { if (inX(q) && cur.theory[i] !== null) ys.push(cur.theory[i]); });
+    if (!ys.length && cur) cur.q.forEach((q, i) => { if (inX(q) && cur.theory[i] !== null) ys.push(m.yf(q, cur.theory[i])); });
     ys = ys.filter(v => logy ? v > 0 : Number.isFinite(v));
     if (!ys.length) ys = [1e-3, 1];
     y0 = Math.min(...ys); y1 = Math.max(...ys);
     if (logy) { const pad = Math.max((Math.log10(y1) - Math.log10(y0)) * 0.05, 0.05); y0 /= 10 ** pad; y1 *= 10 ** pad; }
-    else { const pad = (y1 - y0) * 0.06 || Math.abs(y0) * 0.1 || 1; y0 = Math.min(y0 - pad, ys.every(v => v >= 0) ? 0 : y0 - pad); y1 += pad; }
+    else { const pad = (y1 - y0) * 0.06 || Math.abs(y0) * 0.1 || 1; y0 = m.zeroY && ys.every(v => v >= 0) ? Math.min(0, y0 - pad) : y0 - pad; y1 += pad; }
   }
-  return { logx, logy, x0, x1, y0, y1 };
+  return { logx, logy, x0, x1, y0, y1, xf: m.xf, xinv: m.xinv, xlab: m.xlab };
 }
 
 function makeScale(dom, box) {
-  const fx = v => dom.logx ? Math.log10(v) : v, fy = v => dom.logy ? Math.log10(v) : v;
+  const xf = dom.xf || (v => v), xinv = dom.xinv || (v => v);
+  const fx = v => dom.logx ? Math.log10(xf(v)) : xf(v), fy = v => dom.logy ? Math.log10(v) : v;
   const a = fx(dom.x0), b = fx(dom.x1), c = fy(dom.y0), d = fy(dom.y1);
   const X = v => box.L + (fx(v) - a) / (b - a) * (box.W - box.L - box.R);
   const Y = v => box.T + (d - fy(v)) / (d - c) * (box.H - box.T - box.B);
-  const invX = px => { const t = a + (px - box.L) / (box.W - box.L - box.R) * (b - a); return dom.logx ? 10 ** t : t; };
+  const invX = px => { const t = a + (px - box.L) / (box.W - box.L - box.R) * (b - a); return xinv(dom.logx ? 10 ** t : t); };
   const invY = py => { const t = d - (py - box.T) / (box.H - box.T - box.B) * (d - c); return dom.logy ? 10 ** t : t; };
   const okX = v => finite(v) && (!dom.logx || v > 0), okY = v => finite(v) && (!dom.logy || v > 0);
   return { X, Y, invX, invY, okX, okY, a, b, c, d };
@@ -562,16 +606,24 @@ function drawFrame(svg, box, s, dom, xTicks, yTicks, yLabel, yfmt = tickLabel) {
   const defs = sv('defs'); const cp = sv('clipPath', { id: clipId });
   cp.append(sv('rect', { x: box.L, y: box.T, width: box.W - box.L - box.R, height: box.H - box.T - box.B }));
   defs.append(cp); svg.append(defs);
-  for (const v of xTicks) { const x = s.X(v); svg.append(sv('line', { x1: x, x2: x, y1: box.T, y2: box.H - box.B, class: 'gridline' })); svg.append(sv('text', { x, y: box.H - box.B + 17, 'text-anchor': 'middle' }, tickLabel(v))); }
+  const xf = dom.xf || (v => v);
+  // one notation per axis: all-exponential when every non-zero tick is small
+  const xv = xTicks.map(xf), small = xv.some(v => v !== 0) && xv.every(v => Math.abs(v) < 1e-2 || v === 0) && !dom.logx;
+  const xlabel = v => (small && v !== 0 ? Number(v.toPrecision(3)).toExponential().replace('e+', 'e') : tickLabel(v));
+  for (const v of xTicks) { const x = s.X(v); svg.append(sv('line', { x1: x, x2: x, y1: box.T, y2: box.H - box.B, class: 'gridline' })); svg.append(sv('text', { x, y: box.H - box.B + 17, 'text-anchor': 'middle' }, xlabel(xf(v)))); }
   for (const v of yTicks) { const y = s.Y(v); svg.append(sv('line', { x1: box.L, x2: box.W - box.R, y1: y, y2: y, class: 'gridline' })); svg.append(sv('text', { x: box.L - 8, y: y + 4, 'text-anchor': 'end' }, yfmt(v))); }
   svg.append(sv('line', { x1: box.L, x2: box.L, y1: box.T, y2: box.H - box.B, class: 'axisline' }));
   svg.append(sv('line', { x1: box.L, x2: box.W - box.R, y1: box.H - box.B, y2: box.H - box.B, class: 'axisline' }));
-  svg.append(sv('text', { x: (box.L + box.W - box.R) / 2, y: box.H - 6, 'text-anchor': 'middle', class: 'axis-title' }, 'Q (Å⁻¹)'));
+  svg.append(sv('text', { x: (box.L + box.W - box.R) / 2, y: box.H - 6, 'text-anchor': 'middle', class: 'axis-title' }, dom.xlab || 'Q (Å⁻¹)'));
   svg.append(sv('text', { transform: `translate(16 ${(box.T + box.H - box.B) / 2}) rotate(-90)`, 'text-anchor': 'middle', class: 'axis-title' }, yLabel));
   const g = sv('g', { 'clip-path': `url(#${clipId})` }); svg.append(g);
   return g;
 }
-function xTicksFor(dom, s) { return dom.logx ? logTicks(s.a, s.b) : linTicks(dom.x0, dom.x1, 8); }
+function xTicksFor(dom, s) {
+  if (dom.logx) return logTicks(s.a, s.b);
+  const xf = dom.xf || (v => v), xinv = dom.xinv || (v => v);
+  return linTicks(xf(dom.x0), xf(dom.x1), 8).filter(t => t >= 0 || xf === PLOT_MODES.iq.xf).map(xinv);
+}
 
 function drawMasked(g, box, s) {
   const [wa, wb] = windowRange();
@@ -593,7 +645,8 @@ function renderMain() {
   const yTicks = dom.logy ? logTicks(s.c, s.d) : linTicks(dom.y0, dom.y1, 6);
   const ds0 = activeDataset();
   const yUnit = ds0?.i_unit ? prettyUnits(ds0.i_unit.replace('cm^{-1}', 'cm⁻¹')) : 'cm⁻¹';
-  const g = drawFrame(svg, MAIN, s, dom, xTicksFor(dom, s), yTicks, `I(Q) (${yUnit})`);
+  const m = plotMode();
+  const g = drawFrame(svg, MAIN, s, dom, xTicksFor(dom, s), yTicks, m.ylab(yUnit));
   drawMasked(g, MAIN, s);
   // data: inactive sets first so the active one sits on top
   const sets = shownSets().sort((a, b) => (a.id === S.activeId) - (b.id === S.activeId));
@@ -602,12 +655,12 @@ function renderMain() {
     const eg = sv('g', { stroke: colour });
     const pg = sv('g', { fill: colour });
     for (let i = 0; i < d.q.length; i++) {
-      const q = d.q[i], y = d.i[i];
+      const q = d.q[i], y = m.yf(q, d.i[i]);
       if (!s.okX(q) || !s.okY(y)) continue;
       const out = active && !inWindow(q) ? ' out' : '';
       const x = s.X(q);
       if (d.di) {
-        const lo = y - d.di[i], hi = y + d.di[i];
+        const lo = m.yf(q, d.i[i] - d.di[i]), hi = m.yf(q, d.i[i] + d.di[i]);
         const ylo = s.okY(lo) ? s.Y(lo) : MAIN.H - MAIN.B, yhi = s.Y(hi);
         eg.append(sv('line', { x1: x, x2: x, y1: ylo, y2: yhi, class: 'err' + out }));
       }
@@ -615,8 +668,8 @@ function renderMain() {
     }
     g.append(eg, pg);
   }
-  if (S.pinned) g.append(sv('path', { d: pathD(S.pinned.q, S.pinned.theory, s), class: 'pinned' }));
-  if (S.current) g.append(sv('path', { d: pathD(S.current.q, S.current.theory, s), class: 'model' }));
+  if (S.pinned) g.append(sv('path', { d: pathD(S.pinned.q, transformed(S.pinned.q, S.pinned.theory), s), class: 'pinned' }));
+  if (S.current) g.append(sv('path', { d: pathD(S.current.q, transformed(S.current.q, S.current.theory), s), class: 'model' }));
   const hover = sv('g', { id: 'hover-layer' }); g.append(hover);
 }
 function renderResiduals() {
@@ -696,14 +749,16 @@ function setupPlotInteraction() {
       const i = nearestIndex(ds.q, q, dom.logx);
       const x = s.X(ds.q[i]);
       layer.append(sv('line', { x1: x, x2: x, y1: MAIN.T, y2: MAIN.H - MAIN.B, class: 'cross' }));
-      if (s.okY(ds.i[i])) layer.append(sv('circle', { cx: x, cy: s.Y(ds.i[i]), r: 5, class: 'hl' }));
+      const hy = plotMode().yf(ds.q[i], ds.i[i]);
+      if (s.okY(hy)) layer.append(sv('circle', { cx: x, cy: s.Y(hy), r: 5, class: 'hl' }));
       text = `#${i + 1}  Q=${fmt(ds.q[i])} Å⁻¹  I=${fmt(ds.i[i])}${ds.di ? ' ± ' + fmt(ds.di[i], 3) : ''}  model=${fmt(cur.theory[i])}` +
         (cur.residuals ? `  (I−model)/dI=${fmt(cur.residuals[i], 3)}` : '') + (inWindow(ds.q[i]) ? '' : '  [outside χ² window]');
     } else if (cur) {
       const i = nearestIndex(cur.q, q, dom.logx);
       const x = s.X(cur.q[i]);
       layer.append(sv('line', { x1: x, x2: x, y1: MAIN.T, y2: MAIN.H - MAIN.B, class: 'cross' }));
-      if (s.okY(cur.theory[i])) layer.append(sv('circle', { cx: x, cy: s.Y(cur.theory[i]), r: 5, class: 'hl' }));
+      const hy = cur.theory[i] === null ? NaN : plotMode().yf(cur.q[i], cur.theory[i]);
+      if (s.okY(hy)) layer.append(sv('circle', { cx: x, cy: s.Y(hy), r: 5, class: 'hl' }));
       text = `Q=${fmt(cur.q[i])} Å⁻¹  model=${fmt(cur.theory[i])}`;
     }
     $('readout').textContent = text;
@@ -843,6 +898,7 @@ function wire() {
   $('export-csv').onclick = exportCsv;
 
   for (const id of ['logx', 'logy']) $(id).onchange = () => { S.view = null; render(); store(); };
+  $('plot-mode').onchange = () => { setPlotMode($('plot-mode').value); render(); store(); };
   $('unzoom').onclick = () => { S.view = null; render(); };
   for (const id of ['win-min', 'win-max']) $(id).onchange = () => queueEval(0);
   for (const id of ['grid-min', 'grid-max', 'grid-n']) $(id).onchange = () => { S.view = null; queueEval(0); };
@@ -892,6 +948,7 @@ async function start() {
     const last = recall();
     if (last) {
       $('logx').checked = last.logx !== false; $('logy').checked = last.logy !== false;
+      if (last.plotMode && last.plotMode in PLOT_MODES) setPlotMode(last.plotMode);
       if (Array.isArray(last.grid)) [$('grid-min').value, $('grid-max').value, $('grid-n').value] = last.grid;
     }
     let model = st.startup.model, sf = st.startup.structure_factor || '';

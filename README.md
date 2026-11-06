@@ -151,6 +151,14 @@ OneNote, an ELN, Word, Excel or a plain-text cell:
 
 ## Plot
 
+**Plot type** (next to log Q / log I): **I(Q)**; **Kratky**, Q²·I(Q) vs Q
+(linear axes by default), a quick check of folding, compactness or chain-like
+scattering; or **Guinier**, ln I vs Q² (log axes off), where a straight
+low-Q line gives Rg from its slope (−Rg²/3). Guinier opens on the low-Q region
+where ln I has fallen by about 0.8, a little past the usual Q·Rg ≈ 1.3 limit;
+drag to zoom as usual. Data, error bars, the model and any pinned curve are
+all transformed; the residual panel keeps (I − model)/dI on the same Q axis.
+
 Light and dark themes follow the system setting. The **Theme** button in the header switches between auto, light and dark, and the browser remembers your choice. Log/linear axes, drag a box to zoom (a horizontal drag zooms Q only),
 double-click or **Reset zoom** to undo, and hover for point values. The χ² window
 greys out points outside it and restricts both χ² and Match.

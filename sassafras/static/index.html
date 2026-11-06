@@ -96,6 +96,9 @@
       <div class="group">
         <label><input type="checkbox" id="logx" checked> log Q</label>
         <label><input type="checkbox" id="logy" checked> log I</label>
+        <select id="plot-mode" aria-label="Plot type" title="Kratky: Q²·I vs Q (folding/compactness). Guinier: ln I vs Q² (radius of gyration); opens on the low-Q region where ln I has fallen by about 0.8">
+          <option value="iq">I(Q)</option><option value="kratky">Kratky</option><option value="guinier">Guinier</option>
+        </select>
         <button id="unzoom" class="ghost small" title="Also: double-click the plot">Reset zoom</button>
       </div>
       <div class="group" id="window-group" title="Points outside this Q window are greyed and ignored for χ² and Match">
