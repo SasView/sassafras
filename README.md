@@ -1,6 +1,6 @@
 # Sassafras
 
-**Small Angle Scattering Structure- and Form-factor RApid aSsessment**
+**Small Angle Scattering Structure- And Form-factor Rapid ASsessment**
 
 A lightweight SANS/SAXS quick-look tool for the beamline. Load reduced 1D data
 in any format sasdata reads, pick a sasmodels form factor (optionally × a
