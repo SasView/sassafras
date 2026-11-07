@@ -8,6 +8,7 @@ const SLOTS = 8;            // categorical colours; later datasets fall back to 
 const STORE_KEY = 'sassafras.last.v1';
 
 const S = {
+  components: [],   // extra form factors (mixture), after the first
   catalogue: null, datasets: [], activeId: null, visible: new Set(), slotOf: {}, nextSlot: 0,
   model: null, sf: '', desc: null, params: {}, pd: {}, controls: {}, ranges: {}, memory: {},
   current: null, pinned: null, view: null, serial: 0, timer: null, stopped: false,
@@ -61,7 +62,7 @@ async function api(path, body, raw = null, headers = {}) {
 function store() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
-      model: S.model, sf: S.sf, params: S.params, pd: S.pd, controls: S.controls, ranges: S.ranges,
+      model: S.model, sf: S.sf, components: S.components || [], params: S.params, pd: S.pd, controls: S.controls, ranges: S.ranges,
       logx: $('plot-mode').value === 'iq' ? $('logx').checked : logSaved.logx,
       logy: $('plot-mode').value === 'iq' ? $('logy').checked : logSaved.logy,
       plotMode: $('plot-mode').value,
@@ -79,7 +80,17 @@ const colourOf = id => {
   const slot = S.slotOf[id];
   return slot < SLOTS ? `var(--s${slot + 1})` : 'var(--ink-3)';
 };
-const fullName = () => S.sf ? `${S.model}@${S.sf}` : S.model;
+const fullName = () => [S.sf ? `${S.model}@${S.sf}` : S.model, ...(S.components || [])].join('+');
+const MAX_FORMS = 4;          // form factors in a mixture; only the first takes an S(Q)
+/* In a mixture sasmodels prefixes the forms' parameters A_, B_, C_, D_. The first
+   form's are shown plain (its scale as scale₁), the others with their index. */
+function displayName(name) {
+  const m = (S.components || []).length && /^([A-D])_(.+)$/.exec(name);
+  if (!m) return name;
+  const k = 'ABCD'.indexOf(m[1]) + 1;
+  return k === 1 && m[2] !== 'scale' ? m[2] : `${m[2]} ${'₀₁₂₃₄'[k]}`;
+}
+const baseName = name => name.replace(/^[A-D]_/, '');
 
 /* -------------------------------------------------------------- datasets */
 function addDatasets(list, makeActive = true) {
@@ -207,6 +218,68 @@ function populateSq() {
 }
 function modelEntry(name) { return S.catalogue.form_factors.find(m => m.name === name); }
 
+/* ---------------------------------------------------- mixtures ("Mix") */
+function formOptions(sel, value) {
+  const groups = {};
+  for (const m of S.catalogue.form_factors) (groups[m.category] ||= []).push(m);
+  for (const [c, list] of Object.entries(groups)) {
+    const g = el('optgroup', { label: c });
+    for (const m of list) g.append(el('option', { value: m.name, title: m.title }, m.name));
+    sel.append(g);
+  }
+  sel.value = value;
+}
+function renderComponents() {
+  const box = $('components'); box.replaceChildren();
+  $('mix-toggle').checked = S.components.length > 0;
+  box.hidden = !S.components.length;
+  S.components.forEach((name, k) => {
+    const sel = el('select', { 'aria-label': `Form factor ${k + 2}` });
+    formOptions(sel, name);
+    sel.onchange = async () => { S.components[k] = sel.value; await selectModel(S.model, S.sf, true); balanceComponent(k + 1); };
+    const del = el('button', { class: 'ghost small', title: `Remove form factor ${k + 2}` }, '×');
+    del.onclick = () => { S.components.splice(k, 1); renderComponents(); selectModel(S.model, S.sf, true); };
+    const row = el('div', { class: 'comp' }); row.append(el('label', {}, `Form factor ${k + 2}`), sel, del); box.append(row);
+  });
+  if (S.components.length && S.components.length < MAX_FORMS - 1) {
+    const add = el('button', { class: 'small', title: `Add another form factor (up to ${MAX_FORMS})` }, '+ form factor');
+    add.onclick = async () => { S.components.push('power_law'); renderComponents(); await selectModel(S.model, S.sf, true); balanceComponent(S.components.length); };
+    box.append(add);
+  }
+  if (S.components.length) box.append(el('small', { class: 'comp-note' },
+    'Summed with one global scale and background. S(Q) applies to form factor 1; the others\' parameters are numbered and listed last.'));
+}
+async function setMix(on) {
+  const fresh = on && !S.components.length;
+  S.components = on ? (S.components.length ? S.components : ['power_law']) : [];
+  renderComponents(); await selectModel(S.model, S.sf, true);
+  if (fresh) balanceComponent(1);
+}
+/* A newly added form factor starts at sasmodels' defaults, which can be orders of
+   magnitude off. Scale it to about 10% of the rest of the model (or of the data). */
+async function balanceComponent(index) {
+  const pre = 'ABCD'[index] + '_', key = pre + 'scale';
+  if (!(key in S.params)) return;
+  const median = a => { const v = a.filter(x => x !== null && x > 0).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : NaN; };
+  try {
+    const zero = Object.fromEntries(Object.keys(S.params).filter(k => /^[A-D]_scale$/.test(k)).map(k => [k, k === key ? 1 : 0]));
+    const base = request();
+    const [rest, alone] = await Promise.all([
+      api('/api/evaluate', { ...base, params: { ...S.params, [key]: 0, background: 0 } }),
+      api('/api/evaluate', { ...base, params: { ...S.params, ...zero, background: 0 } })]);
+    const ds = activeDataset();
+    let target = median(rest.theory);
+    if (!(target > 0) && ds) target = median(ds.i);
+    // at most 10% of the rest at every Q (power laws would otherwise swamp the low-Q end)
+    let ratio = Infinity;
+    rest.theory.forEach((r, k) => { const a = alone.theory[k]; if (r > 0 && a > 0) ratio = Math.min(ratio, r / a); });
+    if (!Number.isFinite(ratio)) { const one = median(alone.theory); if (!(target > 0 && one > 0)) return; ratio = target / one; }
+    const v = roundSig(0.1 * ratio, 3), p = S.desc.parameters.find(x => x.name === key);
+    S.params[key] = v; S.ranges[key] = initialRange(p, v);
+    controls[key]?.sync(); refreshChanged(); queueEval(0);
+  } catch { /* keep the defaults */ }
+}
+
 function rememberModel() {
   if (!S.desc) return;
   S.memory[S.desc.model] = { params: { ...S.params }, pd: structuredClone(S.pd), ranges: structuredClone(S.ranges), controls: { ...S.controls } };
@@ -217,7 +290,7 @@ async function selectModel(model, sf, carry = true, preset = null) {
   const entry = modelEntry(model);
   if (!entry) { setStatus(`Unknown model ${model}`, 'error'); return; }
   if (!entry.accepts_sq) sf = '';
-  const prev = { params: S.params, pd: S.pd, ranges: S.ranges, desc: S.desc };
+  const prev = { params: S.params, pd: S.pd, ranges: S.ranges, desc: S.desc, model: S.model };
   S.model = model; S.sf = sf || '';
   $('model-select').value = model; $('sq-select').value = S.sf; $('sq-select').disabled = !entry.accepts_sq;
   $('sq-select').title = entry.accepts_sq ? '' : 'No S(Q) for this model: it already includes inter-particle structure, or describes no finite particle.';
@@ -225,14 +298,18 @@ async function selectModel(model, sf, carry = true, preset = null) {
   const mem = preset || S.memory[full];
   setStatus(`Compiling ${full}…`);
   let desc;
-  try { desc = await api('/api/describe', { model, structure_factor: S.sf, controls: mem?.controls || {} }); }
+  try { desc = await api('/api/describe', { model, structure_factor: S.sf, components: S.components || [], controls: mem?.controls || {} }); }
   catch (e) { setStatus(e.message, 'error'); return; }
   S.desc = desc; S.controls = { ...desc.controls };
   const params = {}, ranges = {}, pd = {};
   for (const p of desc.parameters) {
     let v = p.default;
     if (mem && finite(mem.params?.[p.name])) v = mem.params[p.name];
-    else if (carry && prev.desc && finite(prev.params[p.name]) && p.kind === 'float') v = prev.params[p.name];
+    else if (carry && prev.desc && p.kind === 'float') {
+      const alt = p.name.startsWith('A_') ? p.name.slice(2) : 'A_' + p.name;   // first form, mixed or not
+      if (finite(prev.params[p.name])) v = prev.params[p.name];
+      else if (finite(prev.params[alt]) && !(p.name === 'A_scale')) v = prev.params[alt];
+    }
     if (p.kind === 'float') {
       if (p.min !== null && v < p.min) v = p.min;
       if (p.max !== null && v > p.max) v = p.max;
@@ -244,7 +321,10 @@ async function selectModel(model, sf, carry = true, preset = null) {
       ensureInRange(p, ranges[p.name], v);
     }
     if (p.polydisperse) {
-      const src = mem?.pd?.[p.name];  // PD is not carried between models: it is easy to miss
+      // PD is not carried between models (easy to miss), but it is when only the mixture changes
+      const alt = p.name.startsWith('A_') ? p.name.slice(2) : 'A_' + p.name;
+      const same = carry && prev.desc && prev.model === model;
+      const src = mem?.pd?.[p.name] || (same ? prev.pd?.[p.name] || (/^[B-D]_/.test(p.name) ? null : prev.pd?.[alt]) : null);
       pd[p.name] = src ? { ...src } : { width: 0, type: 'gaussian' };
     }
   }
@@ -259,7 +339,7 @@ async function selectModel(model, sf, carry = true, preset = null) {
 /* ------------------------------------------------------------ parameters */
 function initialRange(p, v) {
   const lo = p.min, hi = p.max;
-  if (p.name === 'scale') {
+  if (p.name === 'scale' || /^[A-D]_scale$/.test(p.name)) {
     const c = v > 0 ? v : 1;
     return { lo: c / 1000, hi: Math.min(c * 1000, hi ?? Infinity), log: true };
   }
@@ -309,7 +389,7 @@ function buildControls() {
 function makeControl(p) {
   const wrap = el('div', { class: 'param', 'data-name': p.name });
   const row1 = el('div', { class: 'row1' });
-  const label = el('label', { for: `v-${p.name}`, title: `${p.description}${p.min !== null || p.max !== null ? `\nAllowed: ${p.min ?? '−∞'} to ${p.max ?? '∞'}` : ''}` }, p.name);
+  const label = el('label', { for: `v-${p.name}`, title: `${displayName(p.name) !== p.name ? p.name + ': ' : ''}${p.description}${p.min !== null || p.max !== null ? `\nAllowed: ${p.min ?? '−∞'} to ${p.max ?? '∞'}` : ''}` }, displayName(p.name));
   if (p.units) label.append(el('span', { class: 'units' }, prettyUnits(p.units)));
   const right = el('div', { class: 'right' });
   row1.append(label, right);
@@ -429,11 +509,13 @@ function refreshChanged() {
     if (w) w.classList.toggle('changed', S.params[name] !== c.p.default);
   }
   // radius_effective is ignored unless radius_effective_mode is "unconstrained" (0)
-  const re = document.querySelector('.param[data-name="radius_effective"]');
-  if (re && 'radius_effective_mode' in S.params) {
-    const tied = S.params.radius_effective_mode !== 0;
-    re.classList.toggle('inactive', tied);
-    re.title = tied ? 'Ignored: radius_effective_mode computes it from the form factor. Set the mode to "unconstrained" to use this value.' : '';
+  for (const pre of ['', 'A_']) {
+    const re = document.querySelector(`.param[data-name="${pre}radius_effective"]`);
+    if (re && `${pre}radius_effective_mode` in S.params) {
+      const tied = S.params[`${pre}radius_effective_mode`] !== 0;
+      re.classList.toggle('inactive', tied);
+      re.title = tied ? 'Ignored: radius_effective_mode computes it from the form factor. Set the mode to "unconstrained" to use this value.' : '';
+    }
   }
 }
 function syncAll() { for (const c of Object.values(controls)) c.sync(); refreshChanged(); }
@@ -449,7 +531,7 @@ function gridSpec() {
 function request() {
   const pd = {};
   for (const [k, v] of Object.entries(S.pd)) if (v.width > 0) pd[k] = v;
-  return { model: S.model, structure_factor: S.sf || null, params: S.params, pd,
+  return { model: S.model, structure_factor: S.sf || null, components: S.components || [], params: S.params, pd,
     dataset: S.activeId, grid: gridSpec(), window: windowRange() };
 }
 function queueEval(delay = 50) {
@@ -816,7 +898,7 @@ function paramsDoc() {
     note: (typeof fitInfo === 'function' && fitInfo()) ? 'Values from a BUMPS fit (see "fit").'
       : 'Manual (chi-by-eye) parameter values; not a fit, no uncertainties.',
     fit: typeof fitInfo === 'function' ? fitInfo() : null,
-    model: S.model, structure_factor: S.sf || null, sasmodels_name: fullName(),
+    model: S.model, structure_factor: S.sf || null, components: S.components || [], sasmodels_name: fullName(),
     params: S.params, pd, controls: S.controls, slider_ranges: S.ranges,
     dataset: ds ? { label: ds.label, source: ds.source } : null,
     q_window: windowRange(), chisq_per_point: cur?.dataset && cur.chisq !== undefined ? cur.chisq : null,
@@ -825,7 +907,7 @@ function paramsDoc() {
 const safeName = s => s.replace(/[^\w.-]+/g, '_').replace(/\.(dat|xml|h5|hdf5|nxs|txt|csv|abs|cor|pdh)$/i, '');
 function saveParams() {
   const ds = activeDataset();
-  download(`${ds ? safeName(ds.label) + '_' : ''}${fullName().replace('@', '_')}_params.json`, JSON.stringify(paramsDoc(), null, 2), 'application/json');
+  download(`${ds ? safeName(ds.label) + '_' : ''}${fullName().replace(/[@+]/g, '_')}_params.json`, JSON.stringify(paramsDoc(), null, 2), 'application/json');
 }
 async function loadParams(file) {
   try {
@@ -835,6 +917,8 @@ async function loadParams(file) {
     const preset = { params: doc.params, pd: {}, ranges: doc.slider_ranges || {}, controls: doc.controls || {} };
     for (const [k, v] of Object.entries(doc.pd || {})) preset.pd[k] = { width: Number(v.width) || 0, type: v.type || 'gaussian' };
     if (doc.q_window) { $('win-min').value = doc.q_window[0] ?? ''; $('win-max').value = doc.q_window[1] ?? ''; }
+    S.components = (doc.components || []).filter(c => modelEntry(c)).slice(0, MAX_FORMS - 1);
+    renderComponents();
     await selectModel(doc.model, sf, false, preset);
     setStatus(`Loaded parameters from ${file.name}.`);
   } catch (e) { setStatus(`Could not load ${file.name}: ${e.message}`, 'error'); }
@@ -894,6 +978,7 @@ function wire() {
   };
   $('model-select').onchange = () => selectModel($('model-select').value, S.sf);
   $('sq-select').onchange = () => selectModel(S.model, $('sq-select').value);
+  $('mix-toggle').onchange = () => setMix($('mix-toggle').checked);
 
   $('reset').onclick = () => {
     if (!S.desc) return;
@@ -997,10 +1082,11 @@ async function start() {
     let preset = null;
     if (!model && last?.model && modelEntry(last.model)) {
       model = last.model; sf = last.sf || '';
+      S.components = (last.components || []).filter(c => modelEntry(c)).slice(0, MAX_FORMS - 1);
       preset = { params: last.params || {}, pd: last.pd || {}, ranges: last.ranges || {}, controls: last.controls || {} };
     }
     model = model || 'sphere';
-    S.model = model; populateModels();
+    S.model = model; populateModels(); renderComponents();
     await selectModel(model, sf, false, preset);
     if (suggestBackground()) { setStatus(`${fullName()} ready.` + bkgNote()); queueEval(0); }
     if (st.startup.messages?.length) setStatus(st.startup.messages.join(' | '), 'warn');

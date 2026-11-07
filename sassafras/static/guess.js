@@ -56,6 +56,8 @@ function renderGuess() {
 async function applySuggestion(sgn, v) {
   const preset = { params: v.params || {}, pd: v.pd || {}, ranges: {}, controls: v.controls || {} };
   delete S.memory[sgn.structure_factor ? `${sgn.form}@${sgn.structure_factor}` : sgn.form];
+  const mixed = S.components.length > 0;
+  if (mixed) { S.components = []; renderComponents(); }     // a suggestion is one whole model
   await selectModel(sgn.form, sgn.structure_factor || '', false, preset);
   G.loaded = sgn.model; renderGuess();
   const how = v.source === 'library' && v.chisq_n !== null
@@ -63,8 +65,9 @@ async function applySuggestion(sgn, v) {
     : v.draws && v.chisq_n !== null
     ? `starting values: best of ${v.draws} prior draws${v.polished ? ' + short LM polish' : ''} (χ²/N ${fmt(v.chisq_n, 3)}; a starting point, not a final fit)`
     : (v.note || 'sasmodels defaults');
-  setStatus(sgn.source === 'library' ? `Loaded library match ${sgn.model}; ${how}.`
-    : `Loaded ML suggestion ${sgn.model} (${(100 * sgn.probability).toFixed(0)}%); ${how}.`);
+  setStatus((sgn.source === 'library' ? `Loaded library match ${sgn.model}; ${how}.`
+    : `Loaded ML suggestion ${sgn.model} (${(100 * sgn.probability).toFixed(0)}%); ${how}.`)
+    + (mixed ? ' Mix was turned off: the suggestion is a single model.' : ''), mixed ? 'warn' : '');
 }
 
 async function loadSuggestion(sgn) {

@@ -128,7 +128,8 @@ def make_handler(session: Session, token: str, startup: dict, notebook_dir: str 
                 elif path == "/api/describe":
                     self.send_json(200, session.describe(body.get("model", ""),
                                                          body.get("structure_factor") or None,
-                                                         body.get("controls") or {}))
+                                                         body.get("controls") or {},
+                                                         body.get("components")))
                 elif path == "/api/evaluate":
                     self.send_json(200, session.evaluate(body))
                 elif path == "/api/match":

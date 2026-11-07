@@ -80,7 +80,8 @@ class FitJob:
         from sasmodels.bumps_model import Experiment, Model
         from sasmodels.core import load_model
 
-        full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None)
+        full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None,
+                                                 request.get("components"))
         ds = session.datasets.get(request.get("dataset") or "")
         if ds is None:
             raise UserError("Select an active dataset to fit.")
@@ -144,7 +145,8 @@ class FitJob:
         from . import multi
 
         members, shared, cons = multi.check_request(request)
-        full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None)
+        full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None,
+                                                 request.get("components"))
         kernel = load_model(full, dtype="double")
         models, experiments, n_total, n_free = {}, [], 0, 0
         for m in members:

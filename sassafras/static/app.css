@@ -553,3 +553,11 @@ body.multi-on .param.derived .row2, body.multi-on .param.derived .row1 .value { 
 .ds .alias { color: var(--accent); font-weight: 600; }
 .multi-ctl.fx { min-width: 22px; font-style: italic; }
 body.multi-on .multi-expr.closed { display: none !important; }
+
+/* ------------------------------------------------------- Mix (mixtures) */
+.components { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px; }
+.components[hidden] { display: none; }
+.components .comp { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.components .comp label { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.components > button { align-self: flex-start; }
+.components .comp-note { font-size: 11px; color: var(--ink-3); line-height: 1.35; }

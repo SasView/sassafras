@@ -96,7 +96,7 @@ def effective_radius(session: Session, model: str, params: dict, pd: dict, mode:
 
 
 def _check_model(session: Session, model: str, sf, req: dict):
-    full = session.catalogue.full_name(model, sf)
+    full = session.catalogue.full_name(model, sf, req.get("components"))
     desc = session.catalogue.describe(full, req.get("controls") or {})
     if any(p["kind"] == "control" for p in desc["parameters"]):
         raise UserError(f"{model} has per-shell vector parameters, which IQuana 0.5 cannot set "
@@ -105,7 +105,7 @@ def _check_model(session: Session, model: str, sf, req: dict):
 
 
 def _entry(session: Session, *, model, sf, desc, ds, params, pd, free, window, target, stem, notes, files,
-           who=""):
+           who="", composite=None):
     """Code lines that set up one dataset: data source, resolution, structure factor,
     parameters, polydispersity and Q range. ``target`` is the object the lines call
     (``fitter`` or ``fit['h2o']``); ``who`` prefixes notes in a multi export."""
@@ -142,11 +142,12 @@ def _entry(session: Session, *, model, sf, desc, ds, params, pd, free, window, t
         res_line = f"{target}.set_resolution('none')   # the data carry no dQ"
 
     # ------------------------------------------------------------ model + SF
-    model_lines = [f"{target}.set_model({model!r})"]
+    model_lines = [f"{target}.set_model({model!r})" if not composite else
+                   f"{target}.set_model({composite!r})   # sasmodels mixture: A_, B_, … prefixes, global scale/background"]
     by_name = {p["name"]: p for p in desc["parameters"]}
     reff_mode_line = None
     skip = set()
-    if sf:
+    if sf and not composite:     # in a mixture the S(Q) and its mode parameters stay in the raw sasmodels name
         mode_idx = int(round(params.get("radius_effective_mode", 0)))
         choices = by_name.get("radius_effective_mode", {}).get("choices") or ["unconstrained"]
         mode_name = choices[mode_idx] if 0 <= mode_idx < len(choices) else str(mode_idx)
@@ -229,8 +230,12 @@ def build(session: Session, req: dict) -> dict:
     chisq_n = req.get("chisq_n")
     notes, files = [], {}
     stem = f"{_safe(ds.label)}_{full.replace('@', '_')}"
+    composite = full if req.get("components") else None
     e = _entry(session, model=model, sf=sf, desc=desc, ds=ds, params=req.get("params") or {}, pd=pd, free=free,
-               window=window, target="fitter", stem=stem, notes=notes, files=files)
+               window=window, target="fitter", stem=stem, notes=notes, files=files, composite=composite)
+    if composite and method == "dream":
+        notes.append("IQuana's Bayesian sampler does not take mixtures, so the notebook fits with the simplex (amoeba).")
+        method = "amoeba"
     free = e["free"]
     data_line = (f"fitter.load_data({e['source']}" + (f", dataset={e['entry']}" if e["entry"] else "") + ")" + e["comment"])
     res_line, model_lines, p_lines, pd_lines, q_line = e["res_line"], e["model_lines"], e["p_lines"], e["pd_lines"], e["q_line"]
@@ -331,10 +336,11 @@ def build_multi(session: Session, req: dict) -> dict:
         free = {k: v for k, v in (m.get("free") or {}).items() if (m["alias"], k) not in cons}
         e = _entry(session, model=model, sf=sf, desc=desc, ds=ds, params=m.get("params") or {},
                    pd=_pd_of(m.get("pd"), free), free=free, window=m.get("window") or [None, None],
-                   target="d", stem=f"{stem}_{m['alias']}", notes=notes, files=files, who=f"{m['alias']}: ")
+                   target="d", stem=f"{stem}_{m['alias']}", notes=notes, files=files, who=f"{m['alias']}: ",
+                   composite=full if req.get("components") else None)
         any_free = any_free or bool(e["free"])
         skip_all |= e["skip"]
-        add = (f"fit.add({m['alias']!r}, {e['source']}, model={model!r}"
+        add = (f"fit.add({m['alias']!r}, {e['source']}, model={(full if req.get('components') else model)!r}"
                + (f", dataset={e['entry']}" if e["entry"] else "") + ")" + e["comment"])
         lines = [f"d = fit[{m['alias']!r}]", e["res_line"]] + ([e["q_line"]] if e["q_line"] else [])
         lines += e["model_lines"][1:] + [""] + e["p_lines"] + ([""] + e["pd_lines"] if e["pd_lines"] else [])

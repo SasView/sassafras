@@ -135,6 +135,30 @@ describe the parameters on screen.
 **Copy** and **Save parameters** include the method, χ²ᵣ, degrees of freedom,
 uncertainties and any parameters at a bound while the fit is current.
 
+## Mix (several form factors)
+
+Tick **Mix** (Model panel) to sum up to four form factors, e.g. particles plus
+a low-Q power law, or two populations. The form factor and S(Q) selected above
+stay as form factor 1 (the only one that can carry a structure factor); **+
+form factor** adds the next, × removes one, and unticking Mix goes back to a
+single model, keeping form factor 1's values and polydispersity.
+
+* This is sasmodels' mixture (`sphere@hardsphere+power_law+cylinder`): one
+  global **scale** and **background**, and per-form parameters prefixed `A_`,
+  `B_`, `C_`, `D_`. The panel shows form factor 1's parameters by their plain
+  names (its own scale as **scale ₁**) and the others with their index
+  (**radius ₂**, **power ₂**, …), listed after form factor 1; hover a label
+  for the sasmodels name, which is also what fits, reports and JSON use.
+* A newly added form factor's scale is set to about 10% of the rest of the
+  model at every Q, so it doesn't swamp the curve; adjust from there.
+* Fitting, Match, Multi (shared/per-dataset/expressions on any of these
+  parameters) and the IQuana notebook all work with mixtures. The notebook
+  uses IQuana's raw `set_model('sphere@hardsphere+power_law')`, which keeps
+  the same `A_`/`B_` names, and `MultiFitter.add(..., model=...)` with the same
+  string; IQuana's Bayesian sampler doesn't take mixtures, so a DREAM setting
+  exports as simplex.
+* **Guess** suggests single models: applying a suggestion turns Mix off.
+
 ## Multi (several datasets at once)
 
 Tick **Multi** (next to **Fit** in the Parameters panel) to work on every

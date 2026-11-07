@@ -246,6 +246,9 @@ def _first_sentence(text: str, limit: int = 220) -> str:
     return out if len(out) <= limit else out[: limit - 1] + "…"
 
 
+MAX_COMPONENTS = 4     # form factors in one mixture (the first may carry an S(Q))
+
+
 class Catalogue:
     def __init__(self):
         from sasmodels import core
@@ -273,17 +276,27 @@ class Catalogue:
             form_factors.append(entry)
         return {"form_factors": form_factors, "structure_factors": structure_factors}
 
-    def full_name(self, model: str, structure_factor: str | None) -> str:
+    def full_name(self, model: str, structure_factor: str | None, components=None) -> str:
+        """sasmodels name: ``model[@sf][+form2[+form3[+form4]]]``. The structure factor
+        applies to the first form only (``@`` binds tighter than ``+``); extra forms
+        get sasmodels' B_, C_, D_ parameter prefixes and the first one A_."""
         if model not in self.infos:
             raise UserError(f"Unknown sasmodels model: {model!r}")
+        name = model
         if structure_factor:
             sf = self.infos.get(structure_factor)
             if sf is None or not sf.structure_factor:
                 raise UserError(f"Unknown structure factor: {structure_factor!r}")
             if self.infos[model].structure_factor:
                 raise UserError("Choose a form factor, not a structure factor, before adding S(Q).")
-            return f"{model}@{structure_factor}"
-        return model
+            name = f"{model}@{structure_factor}"
+        extra = [c for c in (components or []) if c]
+        if len(extra) > MAX_COMPONENTS - 1:
+            raise UserError(f"At most {MAX_COMPONENTS} form factors can be combined.")
+        for c in extra:
+            if c not in self.infos or self.infos[c].structure_factor:
+                raise UserError(f"Unknown form factor for a mixture: {c!r}")
+        return "+".join([name] + extra)
 
     def model_info(self, full_name: str):
         try:
@@ -445,8 +458,8 @@ class Session:
                 self._calculators = {k: v for k, v in self._calculators.items() if k[1] != old}
             return kernel
 
-    def describe(self, model: str, structure_factor: str | None, controls=None):
-        full = self.catalogue.full_name(model, structure_factor)
+    def describe(self, model: str, structure_factor: str | None, controls=None, components=None):
+        full = self.catalogue.full_name(model, structure_factor, components)
         desc = self.catalogue.describe(full, controls)
         t0 = time.perf_counter()
         self.kernel(full)  # compile now so slider moves are fast
@@ -511,7 +524,8 @@ class Session:
         request keys: model, structure_factor, params, pd, dataset (id or None),
         grid {qmin,qmax,n} (used when no dataset), window [qmin,qmax] for χ².
         """
-        full = self.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None)
+        full = self.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None,
+                                         request.get("components"))
         ds = self._get(request["dataset"]) if request.get("dataset") else None
         grid = None if ds else self._grid(request)
         pars = self._parameters(request.get("params"), request.get("pd"))
