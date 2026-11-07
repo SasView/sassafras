@@ -64,7 +64,7 @@ def test_match_ranks_the_right_model(index, cylinder_data):
 
 def test_guess_uses_library_and_loads_parameters(index, cylinder_data):
     s, ds = cylinder_data
-    g = Guesser(s, library=str(index))
+    g = Guesser(s, library=str(index), library_sq=False)
     assert g.status()["source"] == "library"
     r = g.suggest({"dataset": ds.id})
     assert r["source"] == "library" and r["suggestions"][0]["model"] == "cylinder"
@@ -78,3 +78,46 @@ def test_guess_uses_library_and_loads_parameters(index, cylinder_data):
 def test_library_can_be_disabled(index):
     assert Guesser(Session(), library=False).library_dir is None
     assert Library.find(str(index)) == index.resolve()
+
+
+@pytest.fixture(scope="module")
+def sq_index(tmp_path_factory):
+    """A tiny S(Q) sub-library of sphere@hardsphere curves."""
+    rng = np.random.default_rng(2)
+    out = tmp_path_factory.mktemp("libsq")
+    draws = [{"radius": float(10 ** rng.uniform(1.3, 2)), "volfraction": float(rng.uniform(0.02, 0.4))}
+             for _ in range(80)]
+    pars = [{**d, "radius_effective": d["radius"], "radius_effective_mode": 0} for d in draws]
+    from sasmodels.core import load_model
+    from sasmodels.data import empty_data1D
+    from sasmodels.direct_model import DirectModel
+    calc = DirectModel(empty_data1D(Q), load_model("sphere@hardsphere"))
+    logI = np.array([np.log10(calc(**p, background=0.001)) for p in pars], np.float32)
+    np.save(out / "logI.npy", (logI - logI.max(axis=1, keepdims=True)).astype(np.float16))
+    np.save(out / "model.npy", np.zeros(80, np.uint8))
+    np.save(out / "params.npy", np.array([[p["radius"], p["radius_effective"], p["volfraction"]] for p in pars],
+                                         np.float32))
+    (out / "meta.json").write_text(json.dumps({
+        "source": "test-sq", "n": 80, "q": Q.tolist(), "models": ["sphere@hardsphere"],
+        "params": {"sphere@hardsphere": ["radius", "radius_effective", "volfraction"]},
+        "pd": {"sphere@hardsphere": []}}))
+    return out
+
+
+def test_sq_sublibrary_is_consulted(index, sq_index):
+    from sasmodels.core import load_model
+    from sasmodels.data import empty_data1D
+    from sasmodels.direct_model import DirectModel
+    q = np.geomspace(0.004, 0.4, 90)
+    i = DirectModel(empty_data1D(q), load_model("sphere@hardsphere"))(
+        radius=40.0, radius_effective=40.0, radius_effective_mode=0, volfraction=0.3, scale=0.3, background=0.02)
+    s = Session()
+    ds = s.load_bytes("shs.csv", "\n".join(f"{a:.8g},{b:.8g},{0.03 * b:.8g}" for a, b in zip(q, i)).encode())[0][0]
+    g = Guesser(s, library=str(index), library_sq=str(sq_index))
+    r = g.suggest({"dataset": ds.id})
+    top = r["suggestions"][0]
+    assert top["model"] == "sphere@hardsphere" and top["structure_factor"] == "hardsphere"
+    v = r["values"]
+    assert v["structure_factor"] == "hardsphere" and v["params"]["radius_effective_mode"] == 0
+    assert v["params"]["radius"] == pytest.approx(40, rel=0.15)
+    assert v["params"]["volfraction"] == pytest.approx(0.3, rel=0.3)

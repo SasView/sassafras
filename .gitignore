@@ -5,3 +5,4 @@ __pycache__/
 build/
 dist/
 sassafras/ml/library/
+sassafras/ml/library_sq/

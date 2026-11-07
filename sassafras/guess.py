@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from .backend import Session, UserError
-from .library import Library
+from .library import DEFAULT_SQ_DIR, Library
 
 PRIOR_DRAWS = 300          # upper limit on parameter sets tried per model
 PRIOR_BUDGET_S = 4.0       # ... and on time spent
@@ -60,10 +60,15 @@ def _candidates(explicit: str | None) -> list[Path]:
 
 
 class Guesser:
-    def __init__(self, session: Session, folder: str | None = None, library: str | None = None):
+    def __init__(self, session: Session, folder: str | None = None, library: str | None = None,
+                 library_sq: str | None = None):
         self.session = session
-        self.library_dir = Library.find(library)
-        self._library = None
+        dirs = [Library.find(library)]
+        if library is not False:      # the S(Q) sub-library is consulted alongside the main one
+            dirs.append(Library.find(library_sq, DEFAULT_SQ_DIR, "SASSAFRAS_LIBRARY_SQ"))
+        self.library_dirs = [d for d in dirs if d]
+        self.library_dir = self.library_dirs[0] if self.library_dirs else None
+        self._libraries = None
         self._last_match = None          # (key, {model: [(chi, row), ...]}) of the last library lookup
         self.folder = next((p.resolve() for p in _candidates(folder) if (p / "sans_ml").is_dir()), None)
         self.model_path = None
@@ -77,16 +82,22 @@ class Guesser:
     def status(self) -> dict:
         net = self._network_status()
         if self.library_dir:
-            label = f"library {self.library_dir.parent.name}/{self.library_dir.name}"
-            return {"available": True, "source": "library", "folder": str(self.library_dir),
+            label = " + ".join(f"{d.parent.name}/{d.name}" for d in self.library_dirs)
+            return {"available": True, "source": "library", "folder": ", ".join(map(str, self.library_dirs)),
                     "label": label, "network": net["available"]}
         return {**net, "source": "network", "network": net["available"]}
 
-    def library(self) -> Library:
+    def libraries(self) -> list[Library]:
         with self.lock:
-            if self._library is None:
-                self._library = Library(self.library_dir)
-            return self._library
+            if self._libraries is None:
+                self._libraries = [Library(d) for d in self.library_dirs]
+            return self._libraries
+
+    def _library_label(self):
+        return " + ".join(lib.label for lib in self.libraries())
+
+    def _in_library(self, full: str) -> bool:
+        return any(full in lib.models for lib in self.libraries())
 
     def _network_status(self) -> dict:
         if not self.folder:
@@ -175,11 +186,18 @@ class Guesser:
         key = (ds.id, hash(ds.q[mask].tobytes() + ds.i[mask].tobytes()), json.dumps(window))
         if self._last_match and self._last_match[0] == key and (model is None or model in self._last_match[1]):
             return self._last_match[1]
+        merged = {}
         try:
-            best = self.library().match(ds.q[mask], ds.i[mask], None if ds.di is None else ds.di[mask],
-                                        model=model, per_model=POLISH_TOP)
+            for li, lib in enumerate(self.libraries()):
+                if model is not None and model not in lib.models:
+                    continue
+                found = lib.match(ds.q[mask], ds.i[mask], None if ds.di is None else ds.di[mask],
+                                  model=model, per_model=POLISH_TOP)
+                for name, hits in found.items():
+                    merged[name] = [(chi, row, li) for chi, row in hits]
         except ValueError as exc:
             raise UserError(f"The curve library can't use this curve: {exc}") from None
+        best = dict(sorted(merged.items(), key=lambda kv: kv[1][0][0]))
         if model is None:
             self._last_match = (key, best)
         return best
@@ -193,18 +211,19 @@ class Guesser:
         chi0 = top[0][1][0][0]
         out = []
         for name, hits in top:
-            entry = {"model": name, "form": name, "structure_factor": None, "chisq_n": hits[0][0],
+            form, _, sf = name.partition("@")
+            entry = {"model": name, "form": form, "structure_factor": sf or None, "chisq_n": hits[0][0],
                      "weight": (chi0 / hits[0][0]) if hits[0][0] > 0 else 1.0,
-                     "source": "library", "loadable": name in listing, "reason": ""}
+                     "source": "library", "loadable": form in listing, "reason": ""}
             if not entry["loadable"]:
                 entry["reason"] = "not in this sasmodels version"
             out.append(entry)
-        lib = self.library()
-        result = {"suggestions": out, "source": "library", "library": lib.label,
+        result = {"suggestions": out, "source": "library", "library": self._library_label(),
                   "elapsed_s": time.perf_counter() - t0, "used_points": int(mask.sum()), "window": req.get("window")}
         first = next((x for x in out if x["loadable"]), None)
         if first and req.get("with_values", True):
-            result["values"] = self._library_values({**req, "model": first["form"]})
+            result["values"] = self._library_values({**req, "model": first["form"],
+                                                     "structure_factor": first["structure_factor"]})
         return result
 
     def _library_values(self, req: dict) -> dict:
@@ -212,37 +231,41 @@ class Guesser:
         structural parameters, default SLDs, a short polydispersity scan, the
         linear scale/background solve and the usual LM polish."""
         s, t0 = self.session, time.perf_counter()
-        model = req.get("model", "")
+        model, sf = req.get("model", ""), req.get("structure_factor") or None
+        full = f"{model}@{sf}" if sf else model
         ds = s.datasets.get(req.get("dataset") or "")
         if ds is None:
             raise UserError("Select an active dataset first.")
         mask = s._window_mask(ds, req.get("window"))
-        hits = self._match(ds, mask, req.get("window"), model=model).get(model)
+        hits = self._match(ds, mask, req.get("window"), model=full).get(full)
         if not hits:
-            return {"model": model, "structure_factor": None, "params": {}, "pd": {}, "draws": 0,
-                    "chisq_n": None, "note": f"{model} is not in the curve library: starting from sasmodels defaults"}
-        lib = self.library()
+            return {"model": model, "structure_factor": sf, "params": {}, "pd": {}, "draws": 0,
+                    "chisq_n": None, "note": f"{full} is not in the curve library: starting from sasmodels defaults"}
+        lib = self.libraries()[hits[0][2]]
         w = 1.0 / ds.di[mask] if ds.di is not None else 1.0 / np.maximum(np.abs(ds.i[mask]), 1e-30)
         y = ds.i[mask]
         ranked, slow = [], False
-        for _, row in hits:
+        for _, row, _li in hits:
             if slow or (ranked and time.perf_counter() - t0 > LIBRARY_SCAN_S):
                 break
             stored = lib.curve_params(row)
-            base = s.describe(model, None)
+            base = s.describe(model, sf)
             ctrl = {}
             for p in base["parameters"]:
                 if p["kind"] == "control" and p["name"] in stored:
                     v = int(round(stored[p["name"]]))
                     lo, hi = p["min"], p["max"]
                     ctrl[p["name"]] = int(min(max(v, lo if lo is not None else v), hi if hi is not None else v))
-            desc = s.describe(model, None, ctrl) if ctrl else base
+            desc = s.describe(model, sf, ctrl) if ctrl else base
             params, varied, limits = {}, set(), {}
             for p in desc["parameters"]:
                 name = p["name"]
                 limits[name] = (p["min"], p["max"])
                 if p["kind"] == "control":
                     params[name] = float(ctrl.get(name, p["default"]))
+                    continue
+                if name in ("radius_effective_mode", "structure_factor_mode"):
+                    params[name] = 0.0      # the library used P*S at its stored radius_effective
                     continue
                 if p["kind"] != "float":
                     continue
@@ -252,19 +275,20 @@ class Guesser:
                     lo, hi = p["min"], p["max"]
                     if (lo is None or v >= lo) and (hi is None or v <= hi):
                         params[name] = float(v)
-                        varied.add(name)
+                        if name not in ("temperature", "dielectconst"):   # fixed solvent conditions
+                            varied.add(name)
             params["scale"], params["background"] = 1.0, 0.0
             pd_names = [p["name"] for p in desc["parameters"] if p.get("polydisperse")
-                        and p["name"] in set(lib.meta.get("pd", {}).get(model, []))]
+                        and p["name"] in set(lib.meta.get("pd", {}).get(full, []))]
             best = None
             for width in ((0.0, 0.1, 0.2, 0.3) if pd_names else (0.0,)):
                 if width and time.perf_counter() - t0 > LIBRARY_SCAN_S:
                     break
                 pd = {k: {"width": width, "type": "schulz", "n": SEARCH_PD_N} for k in pd_names} if width else {}
-                scored = self._score(model, None, ds, mask, w, y, params, pd)
+                scored = self._score(model, sf, ds, mask, w, y, params, pd)
                 if not width:
                     t1 = time.perf_counter()                   # time a second, compiled call
-                    self._score(model, None, ds, mask, w, y, params, {})
+                    self._score(model, sf, ds, mask, w, y, params, {})
                     took = time.perf_counter() - t1
                     if took > SLOW_EVAL_S:
                         slow = True     # a slow kernel: keep this one match, without polydispersity
@@ -282,7 +306,7 @@ class Guesser:
             if best:
                 ranked.append((*best, varied))
         if not ranked:
-            return {"model": model, "structure_factor": None, "params": {}, "pd": {}, "draws": len(hits),
+            return {"model": model, "structure_factor": sf, "params": {}, "pd": {}, "draws": len(hits),
                     "chisq_n": None, "note": "the library matches did not evaluate: starting from sasmodels defaults"}
         ranked.sort(key=lambda r: r[0])
         # SLDs are not stored in the library; when contrast ratios shape the curve
@@ -290,7 +314,7 @@ class Guesser:
         slds = [p["name"] for p in desc["parameters"] if p["kind"] == "float"
                 and p["name"].startswith("sld") and "solvent" not in p["name"]]
         bounds = {k: (-0.56, 8.0) for k in slds} if len(slds) >= 2 else None
-        out = self._finish(model, None, ds, ranked, req, t0, limits, None if slow else bounds,
+        out = self._finish(model, sf, ds, ranked, req, t0, limits, None if slow else bounds,
                            polish_s=SLOW_POLISH_S if slow else POLISH_BUDGET_S)
         out.update(draws=len(hits), source="library", library=lib.label,
                    controls={k: int(v) for k, v in out["params"].items() if k in ctrl})
@@ -319,7 +343,12 @@ class Guesser:
         (``source`` "library", the default when one is installed), else the best of
         up to PRIOR_DRAWS ml-sans prior draws, scored by χ²/N after the linear
         scale/background solve. Returns params, pd, controls and the score."""
-        if self.library_dir and req.get("source", "library") == "library" and not req.get("structure_factor"):
+        if "@" in req.get("model", ""):          # accept "form@sf" as the model name too
+            form, _, sf_name = req["model"].partition("@")
+            req = {**req, "model": form, "structure_factor": sf_name}
+        sf = req.get("structure_factor")
+        full = f"{req.get('model', '')}@{sf}" if sf else req.get("model", "")
+        if self.library_dir and req.get("source", "library") == "library" and self._in_library(full):
             return self._library_values(req)
         self._load_priors()
         s = self.session

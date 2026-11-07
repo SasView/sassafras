@@ -201,9 +201,29 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   polydisperse (fewer of them for slow kernels), then runs the short LM
   polish. For models whose shape depends on contrast ratios (two or more
   particle SLDs, e.g. core–shell), the polish also moves those SLDs.
-* **Limits:** there are no structure factors in the library apart from
-  `binary_hard_sphere`, so a P×S curve matches the closest form factor alone
-  (add the S(Q) yourself afterwards).
+* **S(Q) sub-library:** SAS-55M-20k itself has no structure factors (apart
+  from `binary_hard_sphere`), so a second index adds P×S curves. It takes 3,000
+  random curves of each of the 20 particle form factors that have a defined
+  effective radius (spheres, core–shells, vesicles, cylinders, ellipsoids,
+  prisms, …; not the shape-independent, lamellar or flexible-chain models),
+  and multiplies each by four structure factors:
+
+  | S(Q) | weak | strong |
+  |---|---|---|
+  | `hardsphere` | φ 0.02–0.10 | φ 0.20–0.40 |
+  | `hayter_msa` (water, 298 K) | φ 0.005–0.05, charge 5–20 e, salt 0.01–0.1 M | φ 0.02–0.15, charge 20–60 e, salt 0–0.005 M |
+
+  S(Q) is evaluated at the form's effective radius (equivalent-volume sphere
+  where defined) × 1.0–1.1, on the same Q points, as
+  I = (I_stored − 0.001)·S(Q) + 0.001, so each curve keeps the generator's
+  polydispersity and SLDs. Settings where Hayter–MSA has no physical solution
+  (S ≤ 0, mostly large particles at weak charge) are dropped, leaving about
+  205,000 curves (~90 MB). The lookup searches both indexes at once, and a
+  `form@sf` match loads with `radius_effective_mode` "unconstrained" at the
+  stored radius_effective; temperature and dielectric constant stay fixed in
+  the polish.
+* **Limits:** P×S is only covered for the S(Q) settings above, and
+  two-population mixtures aren't covered at all.
   Where the generator coupled parameters or depended on the unknown SLDs, the
   stored values are only approximate starting points.
 * **Setup:** download SAS-55M-20k, then build the index once (about 20 s; it
@@ -214,8 +234,15 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   ```
 
   This writes about 400 MB to `sassafras/ml/library`, which is git-ignored.
-  Use `--out` to put it elsewhere and start sassafras with `--library DIR` (or
-  set `SASSAFRAS_LIBRARY`). Without an index, Guess uses the ml-sans network as
+  Then build the S(Q) sub-library (about 30 s, ~90 MB in
+  `sassafras/ml/library_sq`; `--per-model` sets the size):
+
+  ```bash
+  python -m sassafras.library build-sq ~/Downloads/sas-55m-20k
+  ```
+
+  Use `--out` to put either elsewhere and start sassafras with `--library DIR`
+  / `--library-sq DIR` (or set `SASSAFRAS_LIBRARY` / `SASSAFRAS_LIBRARY_SQ`). Without an index, Guess uses the ml-sans network as
   before.
 
 ## IQuana notebook
