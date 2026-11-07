@@ -1,0 +1,15 @@
+{
+  "title": "Sassafras: Small Angle Scattering Structure- and Form-factor Rapid Assessment",
+  "upload_type": "software",
+  "description": "<p>A lightweight SANS/SAXS quick-look tool for the beamline: load reduced 1D data in any format sasdata reads, overlay a sasmodels form factor (optionally times a structure factor) with live sliders, chi-squared and residuals, refine with BUMPS, fit several datasets jointly with shared and constrained parameters, suggest a model from a curve library or neural network, and export IQuana notebooks.</p><p>The prebuilt curve-library indexes used by the Guess button are not in this archive; they are derived from SAS-55M-20k (MIT) and are downloaded with <code>python -m sassafras.library fetch</code>.</p>",
+  "creators": [
+    {"name": "Hammond, Oliver"}
+  ],
+  "license": "BSD-3-Clause",
+  "keywords": ["small-angle scattering", "SANS", "SAXS", "sasmodels", "BUMPS", "IQuana", "data visualisation", "model fitting"],
+  "related_identifiers": [
+    {"identifier": "https://github.com/olihammond/sassafras", "relation": "isSupplementTo", "resource_type": "software", "scheme": "url"},
+    {"identifier": "10.6084/m9.figshare.21716618", "relation": "references", "resource_type": "dataset", "scheme": "doi"},
+    {"identifier": "10.1039/D3DD00225J", "relation": "references", "resource_type": "publication-article", "scheme": "doi"}
+  ]
+}

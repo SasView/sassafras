@@ -164,7 +164,7 @@ SAXS — on the same page:
   dataset's χ²/N next to sassafras's, the joint fit, `fit.get_fit_report()`
   and `fit.save_results(...)` (parameters, datasets, covariance and curves as
   CSV). IQuana has no joint DREAM yet, so a DREAM setting exports as simplex.
-* **Copy → Params**, **Save** and **Load** cover all members (a table with one
+* **Copy to clipboard → Params**, **Save** and **Load** cover all members (a table with one
   column per dataset; the JSON restores the datasets it can find by path).
 * All members share the model and the χ² window. **Guess** still looks at the
   active dataset only and says so when Multi is on.
@@ -326,7 +326,7 @@ and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
 * Needs `iquana` and `jupyterlab` in the same Python environment:
   `pip install iquana jupyterlab`, or `pip install -e ".[notebook]"`.
 
-## Copy to notebook
+## Copy to clipboard
 
 Buttons above the plot put content on the clipboard, ready to paste into
 OneNote, an ELN, Word, Excel or a plain-text cell:

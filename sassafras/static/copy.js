@@ -1,5 +1,5 @@
 'use strict';
-/* Copy to notebook: figure (PNG), parameter summary, data table, or all three.
+/* Copy to clipboard: figure (PNG), parameter summary, data table, or all three.
    Each copy puts rich HTML plus a plain-text version on the clipboard, so it
    pastes sensibly into OneNote, ELNs, Word, Excel or a plain-text cell.
    Loaded after app.js and uses its globals (S, $, fmt, controls, ...). */
@@ -175,7 +175,7 @@ async function writeClipboard(items, what) {
     entries[type] = Promise.resolve(value).then(v => v instanceof Blob ? v : new Blob([v], { type }));
   }
   await navigator.clipboard.write([new ClipboardItem(entries)]);
-  setStatus(`Copied ${what} — paste into your notebook.`);
+  setStatus(`Copied ${what} — ready to paste.`);
 }
 function guard(fn) {
   return () => {

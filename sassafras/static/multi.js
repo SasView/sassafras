@@ -477,8 +477,9 @@ summaryText = function () {
 const _summaryHtml = summaryHtml;
 summaryHtml = function () {
   if (!multiOn()) return _summaryHtml();
-  const t = multiTable();
-  return `<pre style="font:12px ui-monospace,Menlo,monospace">${esc(summaryText())}</pre>` +
+  const t = multiTable(), [first, ...rest] = summaryText().split('\n');
+  // copy-all puts the figure after the first paragraph, so the summary must start with one
+  return `<p>${esc(first)}</p><pre style="font:12px ui-monospace,Menlo,monospace">${esc(rest.join('\n'))}</pre>` +
     `<table><tr>${t.head.map(h => `<th style="text-align:left;padding:2px 10px 2px 0">${esc(h)}</th>`).join('')}</tr>` +
     t.rows.map(r => `<tr>${r.map(c => `<td style="padding:2px 10px 2px 0">${esc(c)}</td>`).join('')}</tr>`).join('') + '</table>';
 };
