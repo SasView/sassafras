@@ -4,7 +4,7 @@
 
 **Small Angle Scattering Structure- And Form-factor Rapid ASsessment**
 
-A lightweight SANS/SAXS quick-look tool for the beamline. Load reduced 1D data
+A lightweight SANS/SAXS analysis tool. Load reduced 1D data
 in any format sasdata reads, pick a sasmodels form factor (optionally × a
 structure factor), and drag sliders to overlay the model on the data —
 chi-by-eye, with live χ² and residuals. With the **Fit** toggle off there is
