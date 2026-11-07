@@ -226,8 +226,16 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   two-population mixtures aren't covered at all.
   Where the generator coupled parameters or depended on the unknown SLDs, the
   stored values are only approximate starting points.
-* **Setup:** download SAS-55M-20k, then build the index once (about 20 s; it
-  needs `pyarrow`, `pip install -e ".[library]"`):
+* **Setup (quick):** download the prebuilt indexes (~290 MB) from the
+  `library-v1` GitHub release into `sassafras/ml`, checksum-verified:
+
+  ```bash
+  python -m sassafras.library fetch
+  ```
+
+* **Setup (from the dataset):** or download SAS-55M-20k
+  ([Figshare](https://doi.org/10.6084/m9.figshare.21716618), ~4.5 GB) and build
+  the index once (about 20 s; it needs `pyarrow`, `pip install -e ".[library]"`):
 
   ```bash
   python -m sassafras.library build ~/Downloads/sas-55m-20k
@@ -244,6 +252,14 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   Use `--out` to put either elsewhere and start sassafras with `--library DIR`
   / `--library-sq DIR` (or set `SASSAFRAS_LIBRARY` / `SASSAFRAS_LIBRARY_SQ`). Without an index, Guess uses the ml-sans network as
   before.
+
+* **Data credit and licence:** SAS-55M-20k is by B. Yildirim, J. Doutch and
+  J. M. Cole (*Digital Discovery* **3**, 694–704, 2024) and is MIT-licensed;
+  the licence is in `sassafras/ml/SAS-55M-20k_LICENSE.txt` and is shipped as
+  `DATA_LICENSE.txt` inside the release archive. To publish a rebuilt index:
+  `python -m sassafras.library pack sassafras-library-vN.tar.gz`, attach it to
+  a release, and update `RELEASE_TAG`, `RELEASE_FILE` and `RELEASE_SHA256` in
+  `sassafras/library.py`.
 
 ## IQuana notebook
 
@@ -301,7 +317,7 @@ where ln I has fallen by about 0.8, a little past the usual Q·Rg ≈ 1.3 limit;
 drag to zoom as usual. Data, error bars, the model and any pinned curve are
 all transformed; the residual panel keeps (I − model)/dI on the same Q axis.
 
-Light and dark themes follow the system setting. The **Theme** button in the header switches between auto, light and dark, and the browser remembers your choice. Log/linear axes, drag a box to zoom (a horizontal drag zooms Q only),
+Light and dark themes follow the system setting. The **Theme** button in the header switches between auto, light and dark, and the browser remembers your choice. The **Colour** button next to it cycles the colour scheme (accents, first data series and logo): chopped (green, default), cooked (orange), washed (blue), chalked (grey) and girlypop (pink); it is remembered too. Log/linear axes, drag a box to zoom (a horizontal drag zooms Q only),
 double-click or **Reset zoom** to undo, and hover for point values. The χ² window
 greys out points outside it and restricts both χ² and Match.
 

@@ -370,9 +370,93 @@ class Library:
         return best
 
 
+# ------------------------------------------------------ prebuilt download
+RELEASE_TAG = "library-v1"
+RELEASE_FILE = "sassafras-library-v1.tar.gz"
+RELEASE_URL = f"https://github.com/olihammond/sassafras/releases/download/{RELEASE_TAG}/{RELEASE_FILE}"
+RELEASE_SHA256 = "5d3f50d3f705d57989216588a6327edd3385c46fb96981c8dfe4e039ca3d915d"
+DATA_NOTICE = """The curve-library indexes in this archive (library/, library_sq/) are derived from
+SAS-55M-20k, the training and test data of SASformer:
+
+  B. Yildirim, J. Doutch and J. M. Cole, "Multi-task scattering-model classification
+  and parameter regression of nanostructures from small-angle scattering data",
+  Digital Discovery 3, 694 (2024). Data: https://doi.org/10.6084/m9.figshare.21716618
+
+SAS-55M-20k is distributed under the MIT licence; its licence text and copyright
+notice follow. library/ holds log10 I on 128 of the 512 Q points and the stored
+parameters; library_sq/ multiplies a sample of those curves by hard-sphere and
+Hayter-MSA structure factors (see sassafras/library.py).
+"""
+
+
+def pack(out: str | Path, dirs=(DEFAULT_DIR, DEFAULT_SQ_DIR), licence: str | Path | None = None, log=print) -> str:
+    """Bundle the built indexes (plus the data notice/licence) into one .tar.gz for a release."""
+    import hashlib
+    import io
+    import tarfile
+    out = Path(out).expanduser()
+    licence = Path(licence).expanduser() if licence else Path(__file__).with_name("ml") / "SAS-55M-20k_LICENSE.txt"
+    notice = DATA_NOTICE + "\n" + licence.read_text()
+    with tarfile.open(out, "w:gz", compresslevel=6) as tar:
+        data = notice.encode()
+        info = tarfile.TarInfo("DATA_LICENSE.txt")
+        info.size, info.mtime = len(data), int(time.time())
+        tar.addfile(info, io.BytesIO(data))
+        for d in map(Path, dirs):
+            if not (d / "meta.json").is_file():
+                raise SystemExit(f"No built index in {d}")
+            for f in sorted(d.iterdir()):
+                if f.is_file():
+                    tar.add(f, arcname=f"{d.name}/{f.name}")
+                    log(f"  added {d.name}/{f.name}")
+    h = hashlib.sha256(out.read_bytes()).hexdigest()
+    log(f"Wrote {out} ({out.stat().st_size / 1e6:.0f} MB), sha256 {h}")
+    return h
+
+
+def fetch(url: str = RELEASE_URL, sha256: str = RELEASE_SHA256, dest: str | Path | None = None, log=print):
+    """Download the prebuilt indexes and unpack them into sassafras/ml (or ``dest``)."""
+    import hashlib
+    import tarfile
+    import tempfile
+    import urllib.request
+    dest = Path(dest).expanduser() if dest else DEFAULT_DIR.parent
+    dest.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=dest) as tmp:
+        part = Path(tmp) / "download.tar.gz"
+        log(f"Downloading {url}")
+        h = hashlib.sha256()
+        with urllib.request.urlopen(url) as r, open(part, "wb") as f:
+            total, done, shown = int(r.headers.get("Content-Length") or 0), 0, -1
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                pct = int(100 * done / total) if total else -1
+                if pct != shown and pct % 10 == 0:
+                    log(f"  {done / 1e6:.0f} MB" + (f" ({pct}%)" if total else ""))
+                    shown = pct
+        if sha256 and h.hexdigest() != sha256:
+            raise SystemExit(f"Checksum mismatch: got {h.hexdigest()}, expected {sha256}")
+        with tarfile.open(part) as tar:
+            members = [m for m in tar.getmembers() if m.isfile()]
+            for m in members:       # only plain files inside library*/ (or the notice)
+                parts = Path(m.name).parts
+                if ".." in parts or Path(m.name).is_absolute() or not (
+                        m.name == "DATA_LICENSE.txt" or (len(parts) == 2 and parts[0] in ("library", "library_sq"))):
+                    raise SystemExit(f"Unexpected file in archive: {m.name}")
+            for m in members:
+                target = dest / m.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(m) as src, open(target, "wb") as f:
+                    while chunk := src.read(1 << 20):
+                        f.write(chunk)
+    log(f"Installed the curve library in {dest} (restart sassafras to use it)")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m sassafras.library",
-                                 description="Build the curve-library index used by Guess.")
+                                 description="Build, pack or download the curve-library index used by Guess.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="index a SAS-55M-20k folder (train/test parquet files)")
     b.add_argument("src")
@@ -383,9 +467,20 @@ def main(argv=None):
     b2.add_argument("--out", default=str(DEFAULT_SQ_DIR))
     b2.add_argument("--per-model", type=int, default=3000, help="base curves per form factor (x4 S(Q) settings)")
     b2.add_argument("--seed", type=int, default=0)
+    f = sub.add_parser("fetch", help="download the prebuilt indexes from the sassafras GitHub release")
+    f.add_argument("--url", default=RELEASE_URL)
+    f.add_argument("--sha256", default=RELEASE_SHA256, help="expected checksum ('' to skip)")
+    f.add_argument("--dest", default=None, help="folder to unpack into (default: sassafras/ml)")
+    pk = sub.add_parser("pack", help="bundle the built indexes into a .tar.gz for a release")
+    pk.add_argument("out")
+    pk.add_argument("--licence", default=None, help="licence file to include (default: sassafras/ml/SAS-55M-20k_LICENSE.txt)")
     args = ap.parse_args(argv)
     try:
-        if args.cmd == "build-sq":
+        if args.cmd == "fetch":
+            fetch(args.url, args.sha256, args.dest)
+        elif args.cmd == "pack":
+            pack(args.out, licence=args.licence)
+        elif args.cmd == "build-sq":
             build_sq(args.src, args.out, args.per_model, args.seed)
         else:
             build(args.src, args.out, args.nq)

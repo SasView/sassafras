@@ -225,6 +225,8 @@ def main(argv=None):
         print("Guess: unavailable - " + g["reason"])
     else:
         print(f"Guess: ready, {'curve library' if g['source'] == 'library' else 'ML network'} ({g['folder']})")
+        if g["source"] != "library":
+            print("       for the curve-library lookup: python -m sassafras.library fetch")
     print("Everything runs locally. Stop with Ctrl+C or the Stop button in the page.")
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()

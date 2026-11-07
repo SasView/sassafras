@@ -923,6 +923,7 @@ function wire() {
   };
   setupPlotInteraction();
   setupTheme();
+  setupScheme();
 }
 
 const THEME_KEY = 'sassafras.theme';
@@ -939,6 +940,28 @@ function setupTheme() {
     mode = { auto: 'light', light: 'dark', dark: 'auto' }[mode] || 'auto';
     applyTheme(mode);
     try { localStorage.setItem(THEME_KEY, mode); } catch { /* no storage */ }
+  };
+}
+
+const SCHEME_KEY = 'sassafras.scheme';
+const SCHEMES = ['chopped', 'cooked', 'washed', 'chalked', 'girlypop'];
+function applyScheme(name) {
+  const root = document.documentElement;
+  if (name === 'chopped') delete root.dataset.scheme; else root.dataset.scheme = name;
+  const tag = name === 'chopped' ? '' : `${name}-`;
+  for (const mode of ['light', 'dark']) document.querySelector(`.logo-${mode}`).src = `/static/logo-${tag}${mode}.png`;
+  $('favicon').href = `/static/favicon${name === 'chopped' ? '' : '-' + name}.png`;
+  $('scheme').textContent = `Colour: ${name}`;
+}
+function setupScheme() {
+  let name = 'chopped';
+  try { name = localStorage.getItem(SCHEME_KEY) || 'chopped'; } catch { /* no storage */ }
+  if (!SCHEMES.includes(name)) name = 'chopped';
+  applyScheme(name);
+  $('scheme').onclick = () => {
+    name = SCHEMES[(SCHEMES.indexOf(name) + 1) % SCHEMES.length];
+    applyScheme(name);
+    try { localStorage.setItem(SCHEME_KEY, name); } catch { /* no storage */ }
   };
 }
 

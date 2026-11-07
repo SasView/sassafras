@@ -26,4 +26,4 @@ sassafras = "sassafras.server:main"
 packages = ["sassafras"]
 
 [tool.setuptools.package-data]
-sassafras = ["static/*", "ml/model.pt", "ml/sans_ml/*.py"]
+sassafras = ["static/*", "ml/model.pt", "ml/sans_ml/*.py", "ml/SAS-55M-20k_LICENSE.txt"]
