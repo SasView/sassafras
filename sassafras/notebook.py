@@ -95,60 +95,54 @@ def effective_radius(session: Session, model: str, params: dict, pd: dict, mode:
         calc.release()
 
 
-def build(session: Session, req: dict) -> dict:
-    """Return {'notebook': nbformat dict, 'files': {name: bytes}, 'notes': [...], 'stem': str}."""
-    model = req.get("model", "")
-    sf = req.get("structure_factor") or None
+def _check_model(session: Session, model: str, sf, req: dict):
     full = session.catalogue.full_name(model, sf)
-    ds = session.datasets.get(req.get("dataset") or "")
-    if ds is None:
-        raise UserError("Select an active dataset to export a notebook.")
     desc = session.catalogue.describe(full, req.get("controls") or {})
     if any(p["kind"] == "control" for p in desc["parameters"]):
         raise UserError(f"{model} has per-shell vector parameters, which IQuana 0.5 cannot set "
                         "individually, so it can't be exported as an IQuana notebook.")
-    params = dict(req.get("params") or {})
-    pd = {k: v for k, v in (req.get("pd") or {}).items() if float(v.get("width", 0) or 0) > 0 or f"{k}_pd" in (req.get("free") or {})}
-    free = req.get("free") or {}
-    window = req.get("window") or [None, None]
-    method = req.get("method") or "lm"
-    fit = req.get("fit") or None
-    chisq_n = req.get("chisq_n")
-    notes, files = [], {}
-    stem = f"{_safe(ds.label)}_{full.replace('@', '_')}"
+    return full, desc
 
+
+def _entry(session: Session, *, model, sf, desc, ds, params, pd, free, window, target, stem, notes, files,
+           who=""):
+    """Code lines that set up one dataset: data source, resolution, structure factor,
+    parameters, polydispersity and Q range. ``target`` is the object the lines call
+    (``fitter`` or ``fit['h2o']``); ``who`` prefixes notes in a multi export."""
+    params = dict(params)
+    free = dict(free)
     # ------------------------------------------------------------ data
     src = Path(ds.source) if not ds.source.startswith("upload:") else None
     use_original = src is not None and src.is_file() and not ds.altered
     if use_original:
-        data_line = f"fitter.load_data({str(src)!r}" + (f", dataset={ds.entry}" if ds.entry else "") + ")"
+        source, entry, comment = repr(str(src)), ds.entry, ""
     else:
         csv_name = f"{stem}_data.csv"
         cols = [ds.q, ds.i] + ([ds.di] if ds.di is not None else []) + ([ds.dq] if ds.dq is not None and ds.di is not None else [])
         header = "Q_invA,I" + (",dI" if ds.di is not None else "") + (",dQ" if ds.dq is not None and ds.di is not None else "")
         lines = [header] + [",".join(repr(float(c[k])) for c in cols) for k in range(ds.q.size)]
         files[csv_name] = ("\n".join(lines) + "\n").encode()
-        data_line = f"fitter.load_data({csv_name!r})   # columns Q, I, dI, dQ (Q in 1/Å), exported by sassafras"
+        source, entry, comment = repr(csv_name), 0, "   # columns Q, I, dI, dQ (Q in 1/Å), exported by sassafras"
         why = "it was uploaded through the browser" if src is None else \
               "sassafras rescaled Q or dropped points on load" if ds.altered else "the original file is no longer at its path"
-        notes.append(f"Data are read from `{csv_name}`, a snapshot of exactly what sassafras plotted, because {why}."
+        notes.append(f"{who}Data are read from `{csv_name}`, a snapshot of exactly what sassafras plotted, because {why}."
                      + (f" Original: `{ds.source}`." if src is not None else ""))
 
     # ------------------------------------------------------------ resolution
     if ds.dxl is not None:
         if use_original:
-            res_line = "fitter.set_resolution('data')   # slit smearing from the file"
+            res_line = f"{target}.set_resolution('data')   # slit smearing from the file"
         else:
-            res_line = (f"fitter.set_resolution('slit', slit_length={_num(np.median(ds.dxl))}"
+            res_line = (f"{target}.set_resolution('slit', slit_length={_num(np.median(ds.dxl))}"
                         + (f", slit_width={_num(np.median(ds.dxw))}" if ds.dxw is not None else "") + ")")
-            notes.append("Slit smearing is set from the median slit length/width (the CSV snapshot cannot carry slit columns).")
+            notes.append(f"{who}Slit smearing is set from the median slit length/width (the CSV snapshot cannot carry slit columns).")
     elif ds.dq is not None:
-        res_line = "fitter.set_resolution('data')   # pinhole dQ from the data, as in sassafras"
+        res_line = f"{target}.set_resolution('data')   # pinhole dQ from the data, as in sassafras"
     else:
-        res_line = "fitter.set_resolution('none')   # the data carry no dQ"
+        res_line = f"{target}.set_resolution('none')   # the data carry no dQ"
 
     # ------------------------------------------------------------ model + SF
-    model_lines = [f"fitter.set_model({model!r})"]
+    model_lines = [f"{target}.set_model({model!r})"]
     by_name = {p["name"]: p for p in desc["parameters"]}
     reff_mode_line = None
     skip = set()
@@ -170,9 +164,9 @@ def build(session: Session, req: dict) -> dict:
                               f"form factor. IQuana 0.5 offers only 'unconstrained' and 'link_radius', so\n"
                               f"# radius_effective is fixed at the value that mode gives for the current geometry "
                               f"({r_eff:.6g} Å). If you fit the size parameters, consider refitting radius_effective.")
-            notes.append(f"`radius_effective_mode = '{mode_name}'` has no IQuana equivalent: R_eff is fixed at "
+            notes.append(f"{who}`radius_effective_mode = '{mode_name}'` has no IQuana equivalent: R_eff is fixed at "
                          f"{r_eff:.6g} Å, the value sasmodels computes for the current geometry.")
-        model_lines.append(f"fitter.set_structure_factor({sf!r}, radius_effective_mode={iq_mode!r})")
+        model_lines.append(f"{target}.set_structure_factor({sf!r}, radius_effective_mode={iq_mode!r})")
         skip.add("radius_effective_mode")             # IQuana manages the kernel switch itself
         if iq_mode == "link_radius":
             skip.add("radius_effective")              # follows radius
@@ -190,25 +184,56 @@ def build(session: Session, req: dict) -> dict:
         unit = f"  # {p['units']}" if p["units"] else ""
         if p["kind"] == "choice":
             label = p["choices"][int(round(value))] if 0 <= int(round(value)) < len(p["choices"]) else value
-            p_lines.append(f"fitter.set_param({name!r},{' ' * (width - len(name))}value={int(round(value))}, vary=False)  # {label}")
+            p_lines.append(f"{target}.set_param({name!r},{' ' * (width - len(name))}value={int(round(value))}, vary=False)  # {label}")
         elif name in free:
             lo, hi = free[name]
-            p_lines.append(f"fitter.set_param({name!r},{' ' * (width - len(name))}value={_num(value)}, "
+            p_lines.append(f"{target}.set_param({name!r},{' ' * (width - len(name))}value={_num(value)}, "
                            f"min={_bound(lo)}, max={_bound(hi)}, vary=True){unit}")
         else:
-            p_lines.append(f"fitter.set_param({name!r},{' ' * (width - len(name))}value={_num(value)}, vary=False){unit}")
+            p_lines.append(f"{target}.set_param({name!r},{' ' * (width - len(name))}value={_num(value)}, vary=False){unit}")
     pd_lines = []
     for base, spec in pd.items():
         vary = f"{base}_pd" in free
-        pd_lines.append(f"fitter.set_pd_param({base!r}, pd_width={_num(spec.get('width', 0))}, pd_n={int(spec.get('n', 35))}, "
+        pd_lines.append(f"{target}.set_pd_param({base!r}, pd_width={_num(spec.get('width', 0))}, pd_n={int(spec.get('n', 35))}, "
                         f"pd_nsigma={_num(spec.get('nsigma', 3))}, pd_type={spec.get('type', 'gaussian')!r}, vary={vary})")
     if any(f"{b}_pd" in free for b in pd):
-        notes.append("PD widths that sassafras fitted between 0 and 1 use IQuana's own PD bounds.")
+        notes.append(f"{who}PD widths that sassafras fitted between 0 and 1 use IQuana's own PD bounds.")
 
     q_line = None
     if window and (window[0] is not None or window[1] is not None):
-        q_line = "fitter.set_q_range(" + ", ".join(
+        q_line = f"{target}.set_q_range(" + ", ".join(
             f"{k}={_num(v)}" for k, v in (("qmin", window[0]), ("qmax", window[1])) if v is not None) + ")"
+    return {"source": source, "entry": entry, "comment": comment, "res_line": res_line, "model_lines": model_lines,
+            "p_lines": p_lines, "pd_lines": pd_lines, "q_line": q_line, "free": free, "skip": skip}
+
+
+def _pd_of(req_pd, free):
+    return {k: v for k, v in (req_pd or {}).items() if float(v.get("width", 0) or 0) > 0 or f"{k}_pd" in (free or {})}
+
+
+def build(session: Session, req: dict) -> dict:
+    """Return {'notebook': nbformat dict, 'files': {name: bytes}, 'notes': [...], 'stem': str}."""
+    if req.get("members"):
+        return build_multi(session, req)
+    model = req.get("model", "")
+    sf = req.get("structure_factor") or None
+    ds = session.datasets.get(req.get("dataset") or "")
+    if ds is None:
+        raise UserError("Select an active dataset to export a notebook.")
+    full, desc = _check_model(session, model, sf, req)
+    free = req.get("free") or {}
+    pd = _pd_of(req.get("pd"), free)
+    window = req.get("window") or [None, None]
+    method = req.get("method") or "lm"
+    fit = req.get("fit") or None
+    chisq_n = req.get("chisq_n")
+    notes, files = [], {}
+    stem = f"{_safe(ds.label)}_{full.replace('@', '_')}"
+    e = _entry(session, model=model, sf=sf, desc=desc, ds=ds, params=req.get("params") or {}, pd=pd, free=free,
+               window=window, target="fitter", stem=stem, notes=notes, files=files)
+    free = e["free"]
+    data_line = (f"fitter.load_data({e['source']}" + (f", dataset={e['entry']}" if e["entry"] else "") + ")" + e["comment"])
+    res_line, model_lines, p_lines, pd_lines, q_line = e["res_line"], e["model_lines"], e["p_lines"], e["pd_lines"], e["q_line"]
 
     # ------------------------------------------------------------ notebook
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -260,6 +285,109 @@ def build(session: Session, req: dict) -> dict:
           "cells": cells}
     for i, c in enumerate(nb["cells"]):
         c["id"] = f"cell-{i}"
+    return {"notebook": nb, "files": files, "notes": notes, "stem": stem}
+
+
+MULTI_METHODS = {"lm": "lm", "amoeba": "amoeba", "de": "de", "dream": "amoeba"}
+
+
+def _nb(cells, meta):
+    nb = {"nbformat": 4, "nbformat_minor": 5,
+          "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
+                       "language_info": {"name": "python"}, "sassafras": meta},
+          "cells": cells}
+    for i, c in enumerate(nb["cells"]):
+        c["id"] = f"cell-{i}"
+    return nb
+
+
+def _code(lines):
+    return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": "\n".join(lines)}
+
+
+def _md(lines):
+    return {"cell_type": "markdown", "metadata": {}, "source": "\n".join(lines)}
+
+
+def build_multi(session: Session, req: dict) -> dict:
+    """IQuana MultiFitter notebook for a sassafras Multi set: one ``add`` per dataset,
+    its own values/bounds/PD/Q range/resolution, then ``share`` and ``constrain``."""
+    from . import __version__
+    from . import multi
+    members, shared, cons = multi.check_request(req)
+    model = req.get("model", "")
+    sf = req.get("structure_factor") or None
+    full, desc = _check_model(session, model, sf, req)
+    method = req.get("method") or "lm"
+    chisq = req.get("chisq_n") or {}
+    notes, files = [], {}
+    stem = f"multi_{full.replace('@', '_')}_" + "_".join(m["alias"] for m in members)
+    choice = {p["name"] for p in desc["parameters"] if p["kind"] == "choice"}
+    blocks, any_free, skip_all = [], False, set()
+    for m in members:
+        ds = session.datasets.get(m.get("id") or "")
+        if ds is None:
+            raise UserError(f"Dataset {m['alias']} is no longer loaded.")
+        free = {k: v for k, v in (m.get("free") or {}).items() if (m["alias"], k) not in cons}
+        e = _entry(session, model=model, sf=sf, desc=desc, ds=ds, params=m.get("params") or {},
+                   pd=_pd_of(m.get("pd"), free), free=free, window=m.get("window") or [None, None],
+                   target="d", stem=f"{stem}_{m['alias']}", notes=notes, files=files, who=f"{m['alias']}: ")
+        any_free = any_free or bool(e["free"])
+        skip_all |= e["skip"]
+        add = (f"fit.add({m['alias']!r}, {e['source']}, model={model!r}"
+               + (f", dataset={e['entry']}" if e["entry"] else "") + ")" + e["comment"])
+        lines = [f"d = fit[{m['alias']!r}]", e["res_line"]] + ([e["q_line"]] if e["q_line"] else [])
+        lines += e["model_lines"][1:] + [""] + e["p_lines"] + ([""] + e["pd_lines"] if e["pd_lines"] else [])
+        blocks.append((m, ds, add, lines))
+    share = [n for n in shared if n not in skip_all and n not in choice
+             and (not n.endswith("_pd") or any(n[:-3] in _pd_of(m.get("pd"), m.get("free")) for m in members))]
+    # a note every dataset raised is said once, without the dataset prefix
+    tails = {}
+    for n in notes:
+        head, sep, tail = n.partition(": ")
+        tails.setdefault(tail if sep and head in {m["alias"] for m in members} else n, []).append(n)
+    notes = [t if len(v) == len(members) and len(members) > 1 else n for t, v in tails.items() for n in v[:1 if len(v) == len(members) else None]]
+    if method == "dream":
+        notes.append("IQuana 0.5 has no joint DREAM sampling yet, so the notebook fits with the simplex (amoeba).")
+
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    md = [f"# Multi-fit · {full} · {len(members)} datasets", "",
+          f"<sub>Exported from sassafras {__version__} on {now}"
+          + (f" (IQuana {_version('iquana')} installed)" if _version("iquana") else "") + "</sub>"]
+    if notes:
+        md += [""] + [f"* {n}" for n in notes]
+    setup = ["from iquana import MultiFitter", "", "fit = MultiFitter()"] + [b[2] for b in blocks]
+    cells = [_md(md), _code(setup)]
+    for m, ds, _, lines in blocks:
+        cells += [_md([f"### {m['alias']} · {ds.label}"]), _code(lines)]
+    links = []
+    if share:
+        links.append("fit.share(" + ", ".join(repr(n) for n in share) + ")   # one value for all datasets")
+    for (alias, name), (_, text) in cons.items():
+        links.append(f"fit.constrain({alias + '.' + name!r}, {text!r})")
+    cells += [_md(["## Shared parameters and expressions"]), _code(links + ([""] if links else []) + ["fit.describe()"])]
+    sass = {m["alias"]: chisq.get(m["alias"]) for m in members if chisq.get(m["alias"]) is not None}
+    check = ["import numpy as np", "",
+             "# each dataset's model at the exported values (shares and expressions applied), inside its Q window",
+             "pred = fit.calculate()",
+             "for name in fit.names:",
+             "    d, m = fit[name].data, pred[name]",
+             "    sel = np.isfinite(m)",
+             "    print(f'{name}: χ²/N = {np.mean(((d.y[sel] - m[sel]) / d.dy[sel]) ** 2):.6g} over {sel.sum()} points')"]
+    if sass:
+        check.append(f"print('sassafras:', {{k: round(v, 6) for k, v in {sass!r}.items()}})")
+    check.append("fit.plot_model()")
+    cells += [_md(["## Check: reproduce the sassafras curves"]), _code(check)]
+    if any_free:
+        cells += [_md(["## Joint fit", "", f"{METHOD_NAMES.get(method, method)}; bounds are the sassafras slider ranges."]),
+                  _code([f"result = fit.fit(method={MULTI_METHODS.get(method, 'lm')!r})", "fit.plot_results()"]),
+                  _code(["fit.get_fit_report()"]),
+                  _md(["## Save"]), _code([f"fit.save_results({stem + '_results'!r})   # parameters, datasets, covariance, curves"])]
+    else:
+        cells += [_md(["## Joint fit", "", "Nothing ticked for fitting: set `vary=True` (with `min`/`max`) above first."]),
+                  _code(["# result = fit.fit(method='lm')", "# fit.plot_results()", "# fit.get_fit_report()"])]
+    nb = _nb(cells, {"version": __version__, "exported": now, "model": full,
+                     "datasets": {m["alias"]: session.datasets[m["id"]].source for m in members}})
     return {"notebook": nb, "files": files, "notes": notes, "stem": stem}
 
 

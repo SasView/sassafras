@@ -133,6 +133,42 @@ describe the parameters on screen.
 **Copy** and **Save parameters** include the method, χ²ᵣ, degrees of freedom,
 uncertainties and any parameters at a bound while the fit is current.
 
+## Multi (several datasets at once)
+
+Tick **Multi** (next to **Fit** in the Parameters panel) to work on every
+ticked dataset together — a contrast series, a concentration series, SANS +
+SAXS — on the same page:
+
+* **Members** are the ticked (drawn) datasets. The active (radio) one is the
+  one the parameter panel edits; click another radio to edit that dataset.
+  Every member's model curve is drawn in its dataset colour, the residual plot
+  shows them all, and the χ²/N readout is the combined value (hover it for
+  each dataset's).
+* **all / each** next to each parameter: *all* means one shared value, slider
+  range and polydispersity for every member; *each* means every dataset has its
+  own (scale, background and solvent SLDs start as *each*, the rest as *all*).
+* **ƒ** (on an *each* parameter) sets this dataset's value by an expression of
+  other parameters, e.g. `0.8 * h2o.scale` or
+  `(h2o.background + d2o.background) / 2`. Datasets are referred to by the
+  short names shown in the Multi line (from the file names); a bare name such
+  as `scale` means the same dataset. Numbers, `+ - * /`, parentheses and
+  integer powers are allowed, as in IQuana; expressions are parsed, never
+  executed, and cycles are refused.
+* **Fit** (with the Fit toggle on) runs one joint BUMPS fit: shared parameters
+  are one fitted quantity, expression parameters are derived, and the fit
+  ticks apply to every dataset (bounds: the slider range — per dataset for
+  *each* parameters). **Undo fit** restores every dataset.
+* **IQuana notebook ↗** writes a `MultiFitter` notebook: one `fit.add(...)`
+  per dataset with its own values, bounds, PD, Q range and resolution, then
+  `fit.share(...)` and `fit.constrain(...)`, a check that prints each
+  dataset's χ²/N next to sassafras's, the joint fit, `fit.get_fit_report()`
+  and `fit.save_results(...)` (parameters, datasets, covariance and curves as
+  CSV). IQuana has no joint DREAM yet, so a DREAM setting exports as simplex.
+* **Copy → Params**, **Save** and **Load** cover all members (a table with one
+  column per dataset; the JSON restores the datasets it can find by path).
+* All members share the model and the χ² window. **Guess** still looks at the
+  active dataset only and says so when Multi is on.
+
 ## Guess (ML model suggestion)
 
 **Guess** (Model panel) passes the active dataset, inside the χ² window, to the
@@ -347,14 +383,15 @@ NXcanSAS), and a synthetic SAXS core–shell dataset written in nm⁻¹.
 ```
 sassafras/backend.py   data loading (sasdata), model catalogue, evaluation (sasmodels)
 sassafras/server.py    stdlib HTTP server + CLI
-sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel)
+sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel; joint multi-dataset fits)
+sassafras/multi.py     Multi: request checks and safe expressions shared by the joint fit and the export
 sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
 sassafras/guess.py     Guess: ml-sans model suggestion + prior-search starting values
 sassafras/_guess_worker.py  child process that runs the ml-sans network (torch)
 sassafras/library.py   curve-library index (build) and shape matching for Guess
 sassafras/ml/          bundled model.pt + sans_ml inference code (copied from ml-sans)
 sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
-                       fitting.js (Fit toggle and controls), notebook.js, guess.js, app.css, logos + favicon
+                       fitting.js (Fit toggle and controls), multi.js (Multi), notebook.js, guess.js, app.css, logos + favicon
 ```
 
 The backend can be used without the GUI:

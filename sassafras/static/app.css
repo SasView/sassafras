@@ -534,3 +534,22 @@ body.fit-on .pdfit.fit-only { display: inline-flex !important; }
 .pdfit .unc { margin-left: 4px; }
 #fit-chi.stale { color: var(--ink-3); text-decoration: line-through; }
 #params.busy { opacity: .55; pointer-events: none; }
+
+/* ---------------------------------------------------------------- Multi */
+.multi-only { display: none !important; }
+body.multi-on .multi-only { display: revert !important; }
+body.multi-on .param .row1 .right .multi-only { display: inline-flex !important; }
+#multi-info { font-size: 11.5px; color: var(--ink-2); margin: -2px 0 8px; line-height: 1.35; }
+#multi-info.warn { color: var(--warn); }
+.multi-ctl { min-width: 34px; justify-content: center; }
+.multi-expr { align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--ink-3); }
+body.multi-on .multi-expr.multi-only { display: flex !important; }
+.multi-expr input { flex: 1; min-width: 0; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 6px; }
+.multi-expr input.bad { border-color: var(--error); color: var(--error); }
+body.multi-on .param.derived .row2, body.multi-on .param.derived .row1 .value { opacity: .45; pointer-events: none; }
+.plot .model.multi { stroke-width: 1.4; fill: none; }
+.plot .model.multi.active { stroke-width: 2.2; }
+.multi-res .pt { opacity: .55; }
+.ds .alias { color: var(--accent); font-weight: 600; }
+.multi-ctl.fx { min-width: 22px; font-style: italic; }
+body.multi-on .multi-expr.closed { display: none !important; }

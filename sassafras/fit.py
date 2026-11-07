@@ -71,7 +71,8 @@ class FitJob:
         self.cancelled = False
         self.started = time.time()
         self.finished = None
-        self.problem, self.labels, self.n_points = self._build(session, request)
+        build = self._build_multi if request.get("members") else self._build
+        self.problem, self.labels, self.n_points = build(session, request)
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     # ------------------------------------------------------------------
@@ -122,6 +123,96 @@ class FitJob:
             raise UserError(f"Only {n} points in the Q window for {len(free)} free parameters.")
         return problem, problem.labels(), n
 
+    @staticmethod
+    def _model_pars(session, pars_in, pd_in, free):
+        pars = session._parameters(pars_in, pd_in)
+        for name in free:      # a fitted PD width must exist in the model even if currently zero
+            if name.endswith("_pd") and name not in pars:
+                base = name[:-3]
+                pd = (pd_in or {}).get(base, {})
+                pars[name] = 0.0
+                pars[f"{base}_pd_type"] = pd.get("type", "gaussian")
+                pars[f"{base}_pd_n"] = int(pd.get("n", 35))
+                pars[f"{base}_pd_nsigma"] = float(pd.get("nsigma", 3.0))
+        return pars
+
+    def _build_multi(self, session: Session, request: dict):
+        """One bumps problem over several datasets: shared parameters are the same
+        bumps Parameter in every model, expressions become bumps equalities."""
+        from sasmodels.bumps_model import Experiment, Model
+        from sasmodels.core import load_model
+        from . import multi
+
+        members, shared, cons = multi.check_request(request)
+        full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None)
+        kernel = load_model(full, dtype="double")
+        models, experiments, n_total, n_free = {}, [], 0, 0
+        for m in members:
+            ds = session.datasets.get(m.get("id") or "")
+            if ds is None:
+                raise UserError(f"Dataset {m.get('alias')} is no longer loaded.")
+            if ds.di is None:
+                raise UserError(f"{ds.label} has no dI, so it cannot be fitted.")
+            free = m.get("free") or {}
+            pars = self._model_pars(session, m.get("params"), m.get("pd"), free)
+            for name in shared:      # a shared PD width must exist in every member
+                if name.endswith("_pd") and name not in pars:
+                    pars.update(self._model_pars(session, {}, m.get("pd"), {name: None}))
+            model = Model(kernel, **pars)
+            for name, par in model.parameters().items():
+                par.name = f"{m['alias']}.{name}"
+            models[m["alias"]] = model
+        first = members[0]["alias"]
+        for name in shared:
+            p0 = getattr(models[first], name, None)
+            if p0 is None:
+                raise UserError(f"{name} is not a parameter of {full}.")
+            p0.name = name
+            for alias, model in models.items():
+                setattr(model, name, p0)
+
+        def lookup(alias, name):
+            par = getattr(models[alias], name, None)
+            if par is None:
+                raise UserError(f"{alias}.{name} is not a parameter of {full}.")
+            return par
+
+        for (alias, name), (tree, text) in cons.items():
+            lookup(alias, name).equals(multi.interpret(tree, lookup))
+        # bounds: shared ones once (from the first member that frees them), others per member
+        seen = set()
+        for m in members:
+            for name, bounds in (m.get("free") or {}).items():
+                if (m["alias"], name) in cons or (name in shared and name in seen):
+                    continue
+                par = getattr(models[m["alias"]], name, None)
+                if par is None:
+                    raise UserError(f"{name} is not a fittable parameter of {full}.")
+                lo, hi = (float(b) for b in bounds)
+                if not (math.isfinite(lo) and math.isfinite(hi) and lo < hi):
+                    raise UserError(f"{m['alias']}.{name}: fit range needs finite min < max (set the slider ends).")
+                if not lo <= float(par.value) <= hi:
+                    raise UserError(f"{m['alias']}.{name}: value {float(par.value):g} is outside its fit range "
+                                    f"[{lo:g}, {hi:g}].")
+                par.range(lo, hi)
+                seen.add(name)
+                n_free += 1
+        if not n_free:
+            raise UserError("Tick at least one parameter to fit.")
+        for m in members:
+            ds = session.datasets[m["id"]]
+            data = ds.to_sasmodels_data()
+            window = m.get("window") or [None, None]
+            data.qmin = float(window[0]) if window[0] is not None else 0.0
+            data.qmax = float(window[1]) if window[1] is not None else np.inf
+            experiments.append(Experiment(data=data, model=models[m["alias"]]))
+            n_total += int(np.sum((ds.q >= data.qmin) & (ds.q <= data.qmax)))
+        problem = FitProblem(experiments)
+        if n_total <= len(problem.labels()):
+            raise UserError(f"Only {n_total} points in the Q windows for {len(problem.labels())} free parameters.")
+        self.derived = {f"{a}.{n}": text for (a, n), (_, text) in cons.items()}
+        return problem, problem.labels(), n_total
+
     def start(self):
         self.thread.start()
         return self
@@ -152,6 +243,7 @@ class FitJob:
             near = (np.abs(x - lo) <= 1e-6 * span) | (np.abs(hi - x) <= 1e-6 * span)
             at_bound = [k for k, b in zip(self.labels, near) if b]
             self.result = {"values": values, "stderr": stderr, "chisq_reduced": chisq,
+                           "multi": bool(self.request.get("members")), "derived": getattr(self, "derived", {}),
                            "dof": int(self.problem.dof), "n_points": self.n_points,
                            "method": self.method, "method_label": METHODS[self.method][0],
                            "at_bound": at_bound, "cancelled": self.cancelled,

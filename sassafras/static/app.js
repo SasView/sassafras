@@ -466,7 +466,7 @@ async function evaluate(serial) {
     render();
     const w = out.warnings || [];
     if (w.length) setStatus(w.join(' | '), 'warn');
-    else if (/^(Compiling|Updating)/.test($('status').textContent) || $('status').className) setStatus(`${out.model}: updated.`);
+    else if (/^(Compiling|Updating)/.test($('status').textContent) || ($('status').className && !/fit/i.test($('status').textContent))) setStatus(`${out.model}: updated.`);
     store();
   } catch (e) {
     if (serial !== S.serial) return;
@@ -674,7 +674,8 @@ function renderMain() {
     g.append(eg, pg);
   }
   if (S.pinned) g.append(sv('path', { d: pathD(S.pinned.q, transformed(S.pinned.q, S.pinned.theory), s), class: 'pinned' }));
-  if (S.current) g.append(sv('path', { d: pathD(S.current.q, transformed(S.current.q, S.current.theory), s), class: 'model' }));
+  if (typeof drawModels === 'function' && drawModels(g, s)) { /* multi.js drew every member's curve */ }
+  else if (S.current) g.append(sv('path', { d: pathD(S.current.q, transformed(S.current.q, S.current.theory), s), class: 'model' }));
   const hover = sv('g', { id: 'hover-layer' }); g.append(hover);
 }
 function renderResiduals() {
@@ -697,6 +698,7 @@ function renderResiduals() {
   drawMasked(g, RES, s);
   if (S.pinned?.residuals && S.pinned.dataset === ds.id) g.append(sv('path', { d: pathD(ds.q, S.pinned.residuals, s, finite), class: 'pinned' }));
   const colour = colourOf(ds.id), pg = sv('g', { fill: colour });
+  if (typeof drawResiduals === 'function') drawResiduals(g, s, peak);   // multi.js: the other members
   ds.q.forEach((q, i) => { if (r[i] !== null && s.okX(q)) pg.append(sv('circle', { cx: s.X(q), cy: s.Y(clamp(r[i], -peak, peak)), r: 2.4, class: 'pt' + (inWindow(q) ? '' : ' out') })); });
   g.append(pg);
 }
@@ -706,7 +708,10 @@ function renderLegend() {
     const k = el('span', { class: 'key', style: `--c:${colourOf(d.id)}` }); k.append(el('span', { class: 'dot' }), document.createTextNode(d.label + (d.id === S.activeId ? ' (active)' : '')));
     box.append(k);
   }
-  if (S.current) { const k = el('span', { class: 'key', style: '--c:var(--model)' }); k.append(el('span', { class: 'mark' }), document.createTextNode(`Model: ${S.current.model}`)); box.append(k); }
+  if (S.current) {
+    const label = typeof multiLegend === 'function' && multiLegend();
+    const k = el('span', { class: 'key', style: '--c:var(--model)' }); k.append(el('span', { class: 'mark' }), document.createTextNode(label || `Model: ${S.current.model}`)); box.append(k);
+  }
   if (S.pinned) { const k = el('span', { class: 'key', style: '--c:var(--pinned)' }); k.append(el('span', { class: 'mark dash' }), document.createTextNode(`Pinned: ${S.pinned.label}`)); box.append(k); }
 }
 function renderScore() {
@@ -718,6 +723,7 @@ function renderScore() {
   const pinShown = S.pinned && ds && S.pinned.dataset === ds.id && S.pinned.chisq !== null;
   $('pin-score').hidden = !pinShown;
   if (pinShown) $('pin-chisq').textContent = fmt(S.pinned.chisq, 4);
+  if (typeof onScore === 'function') onScore();     // multi.js: combined χ²
 }
 
 /* --------------------------------------------------------- hover & zoom */

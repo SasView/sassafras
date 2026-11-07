@@ -46,7 +46,8 @@
     </section>
 
     <section class="panel" id="param-panel">
-      <div class="panel-head"><h2>Parameters</h2><div class="head-tools"><label class="fit-switch" id="fit-toggle-label"><input type="checkbox" id="fit-toggle" role="switch"> Fit</label><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div></div>
+      <div class="panel-head"><h2>Parameters</h2><div class="head-tools"><label class="fit-switch" id="multi-toggle-label" title="Multi: work on all ticked datasets at once, with shared, per-dataset or linked parameters"><input type="checkbox" id="multi-toggle" role="switch"> Multi</label><label class="fit-switch" id="fit-toggle-label"><input type="checkbox" id="fit-toggle" role="switch"> Fit</label><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div></div>
+      <div id="multi-info" class="multi-only"></div>
       <div id="params"></div>
     </section>
   </aside>
@@ -145,5 +146,6 @@
 <script src="/static/fitting.js"></script>
 <script src="/static/notebook.js"></script>
 <script src="/static/guess.js"></script>
+<script src="/static/multi.js"></script>
 </body>
 </html>
