@@ -95,7 +95,7 @@ and sasmodels caches the result after that. OpenCL is off by default
 ## Fitting (optional)
 
 Install `bumps` (`pip install bumps`, or `pip install -e ".[fit]"`) and restart
-sassafras. A **Fit** toggle in the header then shows the fitting controls. With
+sassafras. A **Fit** toggle next to **Defaults** in the Parameters panel then shows the fitting controls. With
 it off, or without bumps installed, the page is the plain chi-by-eye viewer.
 
 1. Get close by eye: sliders, **Bkg from high Q**, **Match scale + bkg**.

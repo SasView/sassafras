@@ -11,7 +11,7 @@
 <body>
 <header class="top">
   <h1 style="margin:0"><img class="logo logo-light" src="/static/logo-light.png" alt="sassafras"><img class="logo logo-dark" src="/static/logo-dark.png" alt="sassafras"></h1>
-  <div class="top-right"><span id="versions"></span><label class="fit-switch" id="fit-toggle-label"><input type="checkbox" id="fit-toggle" role="switch"> Fit</label><button id="theme" class="ghost small" title="Colour theme: follows the system until you choose">Theme: auto</button><button id="stop" class="ghost small">Stop server</button></div>
+  <div class="top-right"><span id="versions"></span><button id="theme" class="ghost small" title="Colour theme: follows the system until you choose">Theme: auto</button><button id="stop" class="ghost small">Stop server</button></div>
 </header>
 
 <main>
@@ -46,7 +46,7 @@
     </section>
 
     <section class="panel" id="param-panel">
-      <div class="panel-head"><h2>Parameters</h2><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div>
+      <div class="panel-head"><h2>Parameters</h2><div class="head-tools"><label class="fit-switch" id="fit-toggle-label"><input type="checkbox" id="fit-toggle" role="switch"> Fit</label><button id="reset" class="ghost small" title="Restore sasmodels defaults">Defaults</button></div></div>
       <div id="params"></div>
     </section>
   </aside>
