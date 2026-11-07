@@ -212,29 +212,13 @@ def build(session: Session, req: dict) -> dict:
 
     # ------------------------------------------------------------ notebook
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    versions = {k: _version(k) for k in ("sasmodels", "sasdata", "bumps", "iquana")}
     from . import __version__
     md = [f"# {ds.label} · {full}",
           "",
-          f"Exported from **sassafras {__version__}** on {now} as **IQuana** code. Running it reproduces the "
-          "sassafras state (data, model, parameter values, polydispersity, Q window, resolution) and sets up "
-          "the same fit.",
-          "",
-          "| | |", "|---|---|",
-          f"| Data | `{ds.source}` ({ds.q.size} points, {ds.q.min():.4g}–{ds.q.max():.4g} Å⁻¹) |",
-          f"| Model | `{full}` |",
-          f"| Q window | {'all Q' if q_line is None else q_line.replace('fitter.set_q_range', '').strip('()')} |"]
-    if chisq_n is not None:
-        md.append(f"| χ²/N in sassafras | {chisq_n:.6g} |")
-    if fit:
-        md.append(f"| sassafras fit | {fit.get('method', '')}, reduced χ² = {float(fit.get('chisq_reduced', float('nan'))):.6g}, "
-                  f"dof = {fit.get('dof', '')}{' (cancelled)' if fit.get('cancelled') else ''} |")
-    md.append(f"| Free parameters | {', '.join(free) if free else 'none ticked in sassafras'} |")
-    md += ["", "Notes:", "",
-           "* IQuana builds sasmodels kernels in single precision and sassafras in double, so curves agree "
-           "to roughly 1 part in 10⁴; χ² can differ in the last digits."]
-    md += [f"* {n}" for n in notes]
-    md += ["", f"<sub>Versions at export: " + ", ".join(f"{k} {v}" for k, v in versions.items() if v) + "</sub>"]
+          f"<sub>Exported from sassafras {__version__} on {now}"
+          + (f" (IQuana {_version('iquana')} installed)" if _version("iquana") else "") + "</sub>"]
+    if notes:
+        md += [""] + [f"* {n}" for n in notes]
 
     setup = ["from iquana import IQuana", "", "fitter = IQuana()", data_line, res_line]
     if q_line:
@@ -250,12 +234,10 @@ def build(session: Session, req: dict) -> dict:
              (f" + '   (sassafras: {chisq_n:.6g})'" if chisq_n is not None else "") + ")",
              "fitter.plot_model(show_residuals=True, log_scale=True)"]
     if free:
-        fit_md = [f"## Fit", "", f"Same free parameters and bounds as in sassafras, with "
-                  f"{METHOD_NAMES.get(method, method)}. Bounds are the sassafras slider ranges."]
+        fit_md = ["## Fit", "", f"{METHOD_NAMES.get(method, method)}; bounds are the sassafras slider ranges."]
         fit_cell = [f"result = {FIT_CALLS.get(method, FIT_CALLS['lm'])}", "fitter.plot_results(show_residuals=True)"]
     else:
-        fit_md = ["## Fit", "", "No parameters were ticked for fitting in sassafras. Set `vary=True` (and `min`/`max`) "
-                  "on the parameters to refine above, then run this cell."]
+        fit_md = ["## Fit", "", "Nothing ticked for fitting: set `vary=True` (with `min`/`max`) above first."]
         fit_cell = ["# result = fitter.fit(engine='bumps', method='lm')", "# fitter.plot_results(show_residuals=True)"]
     report_cell = ["fitter.get_fit_report()"] if free else ["# fitter.get_fit_report()"]
     save_cell = [f"# fitter.save_analysis({stem + '_analysis.json'!r})", f"# fitter.report({stem + '_report.html'!r})"]

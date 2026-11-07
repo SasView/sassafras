@@ -46,9 +46,11 @@ function renderGuess() {
     ol.append(li);
   }
   box.append(ol);
-  box.append(el('div', { class: 'gnote' }, lib
-    ? `Shape χ²/N of each model's closest curve in ${r.library || 'the library'}. Click a row to load it. Starting values: that curve's parameters, default SLDs, a PD scan and a short LM polish.`
-    : 'Probabilities from the network; treat the top 3 as the answer. Click a row to load it. Starting values come from the ml-sans priors (plus a short LM polish when bumps is installed): a starting point, not a final fit.'));
+  const note = el('div', { class: 'gnote' }, lib ? 'Closest-curve χ²/N · click to load' : 'Network probability · click to load');
+  note.title = lib
+    ? `Shape χ²/N of each model's closest curve in ${r.library || 'the library'}. Starting values: that curve's parameters, default SLDs, a PD scan and a short LM polish.`
+    : 'Probabilities from the ml-sans network; treat the top 3 as the answer. Starting values come from its priors plus a short LM polish.';
+  box.append(note);
 }
 
 async function applySuggestion(sgn, v) {

@@ -126,7 +126,7 @@ function renderDatasets() {
   const r0 = el('input', { type: 'radio', name: 'active', 'aria-label': 'No active dataset' }); r0.checked = !S.activeId;
   r0.onchange = () => { S.activeId = null; S.view = null; renderDatasets(); queueEval(0); };
   none.append(r0, el('span'), el('div', {}, ''), el('span'));
-  none.children[2].append(el('div', { class: 'name' }, 'Model only'), el('div', { class: 'meta' }, 'Evaluate on the model grid'));
+  none.children[2].append(el('div', { class: 'name' }, 'Model only'));
   box.append(none);
   for (const d of S.datasets) {
     const row = el('div', { class: 'ds' + (d.id === S.activeId ? ' active' : ''), title: d.source + (d.notes.length ? '\n' + d.notes.join('\n') : '') });

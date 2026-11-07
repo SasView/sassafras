@@ -28,11 +28,11 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 def versions() -> dict:
     out = {}
-    for name in ("sasmodels", "sasdata", "bumps", "numpy"):
+    for name in ("sasmodels", "sasdata", "bumps", "iquana", "numpy"):
         try:
             out[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
-            if name != "bumps":
+            if name not in ("bumps", "iquana"):     # optional: shown only when installed
                 out[name] = "?"
     from . import __version__   # the running code, not a possibly stale install record
     out["sassafras"] = __version__
