@@ -1,5 +1,7 @@
 # Sassafras
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24041504.svg)](https://doi.org/10.5281/zenodo.24041504)
+
 **Small Angle Scattering Structure- And Form-factor Rapid ASsessment**
 
 A lightweight SANS/SAXS quick-look tool for the beamline. Load reduced 1D data
@@ -407,6 +409,14 @@ out["chisq"]
 
 Tested with Python 3.13, sasmodels 1.1.0, sasdata 0.12.2, bumps 1.0.3 and numpy 2.5.3, in
 headless Chromium (light and dark themes, desktop and phone widths).
+
+## Citing
+
+If sassafras helps your work, please cite it:
+[doi:10.5281/zenodo.24041504](https://doi.org/10.5281/zenodo.24041504). That DOI
+always resolves to the latest version; each release also has its own DOI on
+that page. GitHub's "Cite this repository" button gives the same reference
+from `CITATION.cff`.
 
 ## Licence
 
