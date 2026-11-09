@@ -1,15 +1,32 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sassafras"
-version = "0.4.0"
+version = "0.5.0"
 description = "Sassafras: Small Angle Scattering Structure- and Form-factor RApid aSsessment. A SANS/SAXS data viewer with live sasmodels overlays for chi-by-eye checks"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE", "sassafras/ml/SAS-55M-20k_LICENSE.txt"]
 authors = [{name = "Oliver Hammond"}]
+maintainers = [{name = "SasView developers"}]
+keywords = ["small-angle scattering", "SANS", "SAXS", "sasmodels", "sasview", "fitting", "visualisation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: Jupyter",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = ["sasmodels>=1.0.7", "sasdata>=0.9", "numpy"]
 
 [project.optional-dependencies]
@@ -18,6 +35,14 @@ notebook = ["iquana>=0.5", "jupyterlab"]
 guess = ["torch>=2.5", "scipy", "iquana>=0.5"]
 library = ["pyarrow"]       # only to build the curve-library index
 test = ["pytest", "bumps>=0.9"]
+all = ["sassafras[fit,notebook,guess]"]
+
+[project.urls]
+Homepage = "https://github.com/SasView/sassafras"
+Source = "https://github.com/SasView/sassafras"
+Issues = "https://github.com/SasView/sassafras/issues"
+Changelog = "https://github.com/SasView/sassafras/blob/main/CHANGELOG.md"
+DOI = "https://doi.org/10.5281/zenodo.24041504"
 
 [project.scripts]
 sassafras = "sassafras.server:main"

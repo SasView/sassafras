@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from .backend import Session, UserError
-from .library import DEFAULT_SQ_DIR, Library
+from .library import Library
 
 PRIOR_DRAWS = 300          # upper limit on parameter sets tried per model
 PRIOR_BUDGET_S = 4.0       # ... and on time spent
@@ -65,7 +65,7 @@ class Guesser:
         self.session = session
         dirs = [Library.find(library)]
         if library is not False:      # the S(Q) sub-library is consulted alongside the main one
-            dirs.append(Library.find(library_sq, DEFAULT_SQ_DIR, "SASSAFRAS_LIBRARY_SQ"))
+            dirs.append(Library.find(library_sq, "library_sq", "SASSAFRAS_LIBRARY_SQ"))
         self.library_dirs = [d for d in dirs if d]
         self.library_dir = self.library_dirs[0] if self.library_dirs else None
         self._libraries = None

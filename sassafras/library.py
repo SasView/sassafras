@@ -18,10 +18,12 @@ Build once (needs pyarrow, which pandas users usually have)::
 
     python -m sassafras.library build ~/Downloads/sas-55m-20k
 
-which writes ``sassafras/ml/library`` (git-ignored). ``--out`` writes elsewhere;
-point sassafras at it with ``--library`` or ``$SASSAFRAS_LIBRARY``.
+which writes ``library`` in the per-user data folder (:func:`data_dir`, or
+``$SASSAFRAS_DATA``). ``--out`` writes elsewhere; point sassafras at it with
+``--library`` or ``$SASSAFRAS_LIBRARY``. Or download the prebuilt indexes with
+``python -m sassafras.library fetch``.
 
-``build-sq`` adds an S(Q) sub-library in the same format (``sassafras/ml/library_sq``):
+``build-sq`` adds an S(Q) sub-library in the same format (``library_sq``):
 a sample of the particle-shape curves multiplied by hardsphere and hayter_msa
 structure factors (see :func:`build_sq`). Guess searches both.
 """
@@ -37,7 +39,25 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_DIR = Path(__file__).with_name("ml") / "library"
+PACKAGE_ML = Path(__file__).with_name("ml")     # in-package location used before 0.5 (still searched)
+
+
+def data_dir() -> Path:
+    """Per-user folder for downloaded or built indexes: ``$SASSAFRAS_DATA``, else the
+    platform's user data folder (macOS ~/Library/Application Support/sassafras,
+    Windows %LOCALAPPDATA%\\sassafras, Linux $XDG_DATA_HOME or ~/.local/share/sassafras).
+    Not the package folder: that can be read-only and is replaced on every upgrade."""
+    if os.environ.get("SASSAFRAS_DATA"):
+        return Path(os.environ["SASSAFRAS_DATA"]).expanduser()
+    home = Path.home()
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "sassafras"
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local") / "sassafras"
+    return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "sassafras"
+
+
+DEFAULT_DIR = data_dir() / "library"
 N_Q = 128
 MAX_DATA_POINTS = 160      # data points used for matching (evenly thinned beyond this)
 CHUNK = 32768              # library rows scored at a time
@@ -135,7 +155,7 @@ def build(src: str | Path, out: str | Path = DEFAULT_DIR, n_q: int = N_Q, log=pr
 
 
 # ------------------------------------------------------- S(Q) sub-library
-DEFAULT_SQ_DIR = Path(__file__).with_name("ml") / "library_sq"
+DEFAULT_SQ_DIR = data_dir() / "library_sq"
 SQ_BACKGROUND = 0.001          # the background SAS-55M-20k added to every curve
 # "weak" and "strong" structure-factor regimes for realistic samples (uniform ranges)
 SQ_CONFIGS = {
@@ -273,7 +293,7 @@ def build_sq(src: str | Path, out: str | Path = DEFAULT_SQ_DIR, per_model: int =
     np.save(out / "model.npy", model_id)
     np.save(out / "params.npy", params)
     np.save(out / "regime.npy", regime_id)
-    parent = DEFAULT_DIR / "meta.json"
+    parent = (Library.find() or DEFAULT_DIR) / "meta.json"
     pd_src = json.loads(parent.read_text()).get("pd", {}) if parent.is_file() else _pd_params(src / "ml_train_55m.yaml")
     meta = {"source": f"{src.name} + S(Q)", "n": n, "q": q.tolist(), "models": models, "params": plist,
             "pd": {full: pd_src.get(full.split("@")[0], []) for full in models},
@@ -302,12 +322,13 @@ class Library:
         self.label = f"{self.meta.get('source', 'library')} ({n / 1e6:.2g}M curves)"
 
     @staticmethod
-    def find(explicit: str | bool | None = None, default: Path = DEFAULT_DIR,
+    def find(explicit: str | bool | None = None, name: str = "library",
              env: str = "SASSAFRAS_LIBRARY") -> Path | None:
-        """The index folder: ``explicit``, ``$env``, or ``default``; False disables."""
+        """The index folder: ``explicit``, ``$env``, the per-user data folder, then the
+        pre-0.5 in-package folder; False disables."""
         if explicit is False:
             return None
-        for p in [explicit, os.environ.get(env), default]:
+        for p in [explicit, os.environ.get(env), data_dir() / name, PACKAGE_ML / name]:
             if p and (Path(p).expanduser() / "meta.json").is_file():
                 return Path(p).expanduser().resolve()
         return None
@@ -373,7 +394,12 @@ class Library:
 # ------------------------------------------------------ prebuilt download
 RELEASE_TAG = "library-v1"
 RELEASE_FILE = "sassafras-library-v1.tar.gz"
-RELEASE_URL = f"https://github.com/olihammond/sassafras/releases/download/{RELEASE_TAG}/{RELEASE_FILE}"
+ZENODO_URL = ""     # the Zenodo dataset file URL, once the library has its own record (tried first)
+RELEASE_URLS = [u for u in (
+    ZENODO_URL,
+    f"https://github.com/SasView/sassafras/releases/download/{RELEASE_TAG}/{RELEASE_FILE}",
+    f"https://github.com/olihammond/sassafras/releases/download/{RELEASE_TAG}/{RELEASE_FILE}",  # before the move
+) if u]
 RELEASE_SHA256 = "5d3f50d3f705d57989216588a6327edd3385c46fb96981c8dfe4e039ca3d915d"
 DATA_NOTICE = """The curve-library indexes in this archive (library/, library_sq/) are derived from
 SAS-55M-20k, the training and test data of SASformer:
@@ -389,12 +415,15 @@ Hayter-MSA structure factors (see sassafras/library.py).
 """
 
 
-def pack(out: str | Path, dirs=(DEFAULT_DIR, DEFAULT_SQ_DIR), licence: str | Path | None = None, log=print) -> str:
+def pack(out: str | Path, dirs=None, licence: str | Path | None = None, log=print) -> str:
     """Bundle the built indexes (plus the data notice/licence) into one .tar.gz for a release."""
     import hashlib
     import io
     import tarfile
     out = Path(out).expanduser()
+    dirs = dirs or [Library.find(), Library.find(None, "library_sq", "SASSAFRAS_LIBRARY_SQ")]
+    if not all(dirs):
+        raise SystemExit("Build both indexes first (python -m sassafras.library build / build-sq).")
     licence = Path(licence).expanduser() if licence else Path(__file__).with_name("ml") / "SAS-55M-20k_LICENSE.txt"
     notice = DATA_NOTICE + "\n" + licence.read_text()
     with tarfile.open(out, "w:gz", compresslevel=6) as tar:
@@ -414,30 +443,50 @@ def pack(out: str | Path, dirs=(DEFAULT_DIR, DEFAULT_SQ_DIR), licence: str | Pat
     return h
 
 
-def fetch(url: str = RELEASE_URL, sha256: str = RELEASE_SHA256, dest: str | Path | None = None, log=print):
-    """Download the prebuilt indexes and unpack them into sassafras/ml (or ``dest``)."""
+def fetch(url: str | None = None, sha256: str = RELEASE_SHA256, dest: str | Path | None = None, log=print,
+          force: bool = False):
+    """Download the prebuilt indexes into the per-user data folder (or ``dest``).
+    Tries ``url``, else each of RELEASE_URLS in turn (Zenodo, then GitHub)."""
     import hashlib
     import tarfile
     import tempfile
+    import urllib.error
     import urllib.request
-    dest = Path(dest).expanduser() if dest else DEFAULT_DIR.parent
+    dest = Path(dest).expanduser() if dest else data_dir()
+    stamp = dest / "library.version"
+    if not force and stamp.is_file() and stamp.read_text().strip() == f"{RELEASE_TAG} {sha256}" \
+            and (dest / "library" / "meta.json").is_file():
+        log(f"The curve library {RELEASE_TAG} is already installed in {dest} (--force to download again).")
+        return dest
     dest.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest) as tmp:
         part = Path(tmp) / "download.tar.gz"
-        log(f"Downloading {url}")
-        h = hashlib.sha256()
-        with urllib.request.urlopen(url) as r, open(part, "wb") as f:
-            total, done, shown = int(r.headers.get("Content-Length") or 0), 0, -1
-            while chunk := r.read(1 << 20):
-                f.write(chunk)
-                h.update(chunk)
-                done += len(chunk)
-                pct = int(100 * done / total) if total else -1
-                if pct != shown and pct % 10 == 0:
-                    log(f"  {done / 1e6:.0f} MB" + (f" ({pct}%)" if total else ""))
-                    shown = pct
-        if sha256 and h.hexdigest() != sha256:
-            raise SystemExit(f"Checksum mismatch: got {h.hexdigest()}, expected {sha256}")
+        errors = []
+        for u in ([url] if url else RELEASE_URLS):
+            log(f"Downloading {u}")
+            h = hashlib.sha256()
+            try:
+                with urllib.request.urlopen(u, timeout=60) as r, open(part, "wb") as f:
+                    total, done, shown = int(r.headers.get("Content-Length") or 0), 0, -1
+                    while chunk := r.read(1 << 20):
+                        f.write(chunk)
+                        h.update(chunk)
+                        done += len(chunk)
+                        pct = int(100 * done / total) if total else -1
+                        if pct != shown and pct % 10 == 0:
+                            log(f"  {done / 1e6:.0f} MB" + (f" ({pct}%)" if total else ""))
+                            shown = pct
+            except (urllib.error.URLError, OSError) as exc:
+                errors.append(f"{u}: {exc}")
+                log(f"  failed ({exc}); trying the next source")
+                continue
+            if sha256 and h.hexdigest() != sha256:
+                errors.append(f"{u}: checksum {h.hexdigest()} (expected {sha256})")
+                log("  checksum mismatch; trying the next source")
+                continue
+            break
+        else:
+            raise SystemExit("Could not download the curve library:\n  " + "\n  ".join(errors))
         with tarfile.open(part) as tar:
             members = [m for m in tar.getmembers() if m.isfile()]
             for m in members:       # only plain files inside library*/ (or the notice)
@@ -451,7 +500,9 @@ def fetch(url: str = RELEASE_URL, sha256: str = RELEASE_SHA256, dest: str | Path
                 with tar.extractfile(m) as src, open(target, "wb") as f:
                     while chunk := src.read(1 << 20):
                         f.write(chunk)
+    stamp.write_text(f"{RELEASE_TAG} {sha256}\n")
     log(f"Installed the curve library in {dest} (restart sassafras to use it)")
+    return dest
 
 
 def main(argv=None):
@@ -468,7 +519,8 @@ def main(argv=None):
     b2.add_argument("--per-model", type=int, default=3000, help="base curves per form factor (x4 S(Q) settings)")
     b2.add_argument("--seed", type=int, default=0)
     f = sub.add_parser("fetch", help="download the prebuilt indexes from the sassafras GitHub release")
-    f.add_argument("--url", default=RELEASE_URL)
+    f.add_argument("--url", default=None, help="download from this URL instead of the release sources")
+    f.add_argument("--force", action="store_true", help="download again even if already installed")
     f.add_argument("--sha256", default=RELEASE_SHA256, help="expected checksum ('' to skip)")
     f.add_argument("--dest", default=None, help="folder to unpack into (default: sassafras/ml)")
     pk = sub.add_parser("pack", help="bundle the built indexes into a .tar.gz for a release")
@@ -477,7 +529,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     try:
         if args.cmd == "fetch":
-            fetch(args.url, args.sha256, args.dest)
+            fetch(args.url, args.sha256, args.dest, force=args.force)
         elif args.cmd == "pack":
             pack(args.out, licence=args.licence)
         elif args.cmd == "build-sq":

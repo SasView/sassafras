@@ -1,0 +1,29 @@
+# Weekly: check that the prebuilt curve library still downloads and matches its checksum.
+name: curve library
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    env:
+      SASSAFRAS_DATA: ${{ github.workspace }}/.sassafras-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install .
+      - run: python -m sassafras.library fetch
+      - name: Load both indexes
+        run: |
+          python - <<'PY'
+          from sassafras.library import Library
+          for name in ("library", "library_sq"):
+              d = Library.find(None, name, "UNUSED")
+              assert d is not None, name
+              print(Library(d).label)
+          PY

@@ -172,11 +172,11 @@ def main(argv=None):
     parser.add_argument("--ml-sans", default=None,
                         help="full ml-sans folder to use for Guess instead of the model bundled in sassafras/ml")
     parser.add_argument("--library", default=None,
-                        help="curve-library index for Guess (default: sassafras/ml/library, built with "
-                             "python -m sassafras.library build /path/to/sas-55m-20k)")
+                        help="curve-library index for Guess (default: the per-user data folder; get it with "
+                             "python -m sassafras.library fetch)")
     parser.add_argument("--library-sq", default=None,
-                        help="S(Q) sub-library for Guess (default: sassafras/ml/library_sq, built with "
-                             "python -m sassafras.library build-sq /path/to/sas-55m-20k)")
+                        help="S(Q) sub-library for Guess (default: the per-user data folder; get it with "
+                             "python -m sassafras.library fetch)")
     parser.add_argument("--check", action="store_true",
                         help="load files, compile and evaluate the initial model, print a summary and exit")
     args = parser.parse_args(argv)

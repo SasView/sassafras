@@ -15,16 +15,27 @@ with BUMPS (needs the optional `bumps` package).
 It is a generalised local browser GUI with no external JavaScript, working with 
 any model and any (including no) data file.
 
+Sassafras is part of the [SasView](https://www.sasview.org) ecosystem,
+alongside sasmodels, sasdata and [IQuana](https://github.com/SasView/IQuana).
+
+## Install
+
+```bash
+pip install sassafras                     # viewer: sasmodels, sasdata, numpy
+pip install "sassafras[all]"              # + fitting (bumps), IQuana notebooks, Guess (torch)
+python -m sassafras.library fetch         # optional: the ~290 MB curve library for Guess
+```
+
+Extras on their own: `fit` (bumps), `notebook` (IQuana, JupyterLab), `guess`
+(torch, scipy, IQuana). From a clone, `pip install -e ".[all,test]"`.
+
 ## Run
 
 ```bash
-pip install -r requirements.txt          # sasmodels, sasdata, numpy (+ bumps for fitting)
-python -m sassafras                       # from this folder, no install needed
-python -m sassafras run_1234.xml run_1235.h5 -m core_shell_sphere -s hardsphere
-python -m sassafras /data/reduced/        # load every readable file in a folder (≤ 50)
+sassafras                                 # or: python -m sassafras
+sassafras run_1234.xml run_1235.h5 -m core_shell_sphere -s hardsphere
+sassafras /data/reduced/                  # load every readable file in a folder (≤ 50)
 ```
-
-Or install it so `sassafras` works from any folder: `pip install -e .`
 
 A browser tab opens automatically. If it doesn't, open the printed
 `http://127.0.0.1:…` URL. Keep the terminal running, and stop with Ctrl+C or the
@@ -96,7 +107,7 @@ and sasmodels caches the result after that. OpenCL is off by default
 
 ## Fitting (optional)
 
-Install `bumps` (`pip install bumps`, or `pip install -e ".[fit]"`) and restart
+Install `bumps` (`pip install "sassafras[fit]"`) and restart
 sassafras. A **Fit** toggle next to **Defaults** in the Parameters panel then shows the fitting controls. With
 it off, or without bumps installed, the page is the plain chi-by-eye viewer.
 
@@ -220,7 +231,7 @@ the Fit toggle.
 * As the ml-sans README notes, the network does well on simulated-like curves
   and less well on measured data, so treat the top three as the answer.
 * Setup: the trained model is bundled, so only the Python packages are
-  needed: `pip install -e ".[guess]"` (`torch`, `scipy`, `iquana`) in the same
+  needed: `pip install "sassafras[guess]"` (`torch`, `scipy`, `iquana`) in the same
   environment as sassafras. Without them the Guess button is dimmed; clicking it shows what is missing,
   and the terminal prints a `Guess: ready` or `Guess: unavailable` line at
   start-up.
@@ -288,12 +299,18 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   two-population mixtures aren't covered at all.
   Where the generator coupled parameters or depended on the unknown SLDs, the
   stored values are only approximate starting points.
-* **Setup (quick):** download the prebuilt indexes (~290 MB) from the
-  `library-v1` GitHub release into `sassafras/ml`, checksum-verified:
+* **Setup (quick):** download the prebuilt indexes (~290 MB, ~480 MB
+  unpacked), checksum-verified, into your per-user data folder:
 
   ```bash
   python -m sassafras.library fetch
   ```
+
+  The folder is `~/Library/Application Support/sassafras` on macOS,
+  `~/.local/share/sassafras` on Linux and `%LOCALAPPDATA%\sassafras` on
+  Windows; set `SASSAFRAS_DATA` to use another. It survives upgrades and is
+  shared by every Python environment. Indexes built or fetched into
+  `sassafras/ml/` by versions before 0.5 are still found.
 
 * **Setup (from the dataset):** or download SAS-55M-20k
   ([Figshare](https://doi.org/10.6084/m9.figshare.21716618), ~4.5 GB) and build
@@ -303,9 +320,9 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   python -m sassafras.library build ~/Downloads/sas-55m-20k
   ```
 
-  This writes about 400 MB to `sassafras/ml/library`, which is git-ignored.
-  Then build the S(Q) sub-library (about 30 s, ~90 MB in
-  `sassafras/ml/library_sq`; `--per-model` sets the size):
+  This writes about 400 MB to `library` in the data folder. Then build the
+  S(Q) sub-library (about 30 s, ~90 MB in `library_sq`; `--per-model` sets
+  the size):
 
   ```bash
   python -m sassafras.library build-sq ~/Downloads/sas-55m-20k
@@ -319,14 +336,15 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   J. M. Cole (*Digital Discovery* **3**, 694–704, 2024) and is MIT-licensed;
   the licence is in `sassafras/ml/SAS-55M-20k_LICENSE.txt` and is shipped as
   `DATA_LICENSE.txt` inside the release archive. To publish a rebuilt index:
-  `python -m sassafras.library pack sassafras-library-vN.tar.gz`, attach it to
-  a release, and update `RELEASE_TAG`, `RELEASE_FILE` and `RELEASE_SHA256` in
-  `sassafras/library.py`.
+  `python -m sassafras.library pack sassafras-library-vN.tar.gz`, upload it as
+  a new version of the library's Zenodo record (and attach it to a
+  `library-vN` GitHub release as a mirror), then update `RELEASE_TAG`,
+  `RELEASE_FILE`, `RELEASE_SHA256` and `ZENODO_URL` in `sassafras/library.py`.
 
 ## IQuana notebook
 
 **IQuana notebook ↗** (top right of the plot panel) writes a Jupyter notebook with
-[IQuana](https://pypi.org/project/iquana/) code that reproduces what is on
+[IQuana](https://sasview.github.io/IQuana/) code that reproduces what is on
 screen, then opens it in JupyterLab. It covers the data, model and structure
 factor, every parameter value, polydispersity, the Q window and the
 resolution. When the Fit toggle is on it also sets up the same fit: the ticked
@@ -350,7 +368,7 @@ and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
 * Models with per-shell vector parameters (e.g. `core_multi_shell`) can't be
   addressed shell by shell in IQuana 0.5, so they are refused with a message.
 * Needs `iquana` and `jupyterlab` in the same Python environment:
-  `pip install iquana jupyterlab`, or `pip install -e ".[notebook]"`.
+  `pip install "sassafras[notebook]"`.
 
 ## Copy to clipboard
 
@@ -433,6 +451,10 @@ out["chisq"]
 
 Tested with Python 3.13, sasmodels 1.1.0, sasdata 0.12.2, bumps 1.0.3 and numpy 2.5.3, in
 headless Chromium (light and dark themes, desktop and phone widths).
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Citing
 

@@ -26,6 +26,8 @@ def test_bundled_model_is_found_and_override_falls_back():
 
 
 def test_prior_search_finds_the_sphere(setup):
+    pytest.importorskip("scipy")
+    pytest.importorskip("iquana")      # the ml-sans priors need both (the "guess" extra)
     s, g, ds = setup
     v = g.starting_values({"model": "sphere", "structure_factor": "hardsphere", "dataset": ds.id})
     assert v["draws"] > 50 and v["chisq_n"] is not None

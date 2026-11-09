@@ -34,6 +34,7 @@ def test_full_name_rules():
 
 
 def test_describe_and_fit_mixture(session_ds):
+    pytest.importorskip("bumps")
     from sassafras.fit import FitJob
     s, ds = session_ds
     d = s.describe("sphere", None, {}, ["power_law"])
