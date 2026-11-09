@@ -394,7 +394,7 @@ class Library:
 # ------------------------------------------------------ prebuilt download
 RELEASE_TAG = "library-v1"
 RELEASE_FILE = "sassafras-library-v1.tar.gz"
-ZENODO_URL = ""     # the Zenodo dataset file URL, once the library has its own record (tried first)
+ZENODO_URL = f"https://zenodo.org/records/24080759/files/{RELEASE_FILE}?download=1"   # doi:10.5281/zenodo.24080759 (tried first)
 RELEASE_URLS = [u for u in (
     ZENODO_URL,
     f"https://github.com/SasView/sassafras/releases/download/{RELEASE_TAG}/{RELEASE_FILE}",

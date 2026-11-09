@@ -5,7 +5,7 @@
 - Moved to [github.com/SasView/sassafras](https://github.com/SasView/sassafras) and published on PyPI
   (`pip install sassafras`, extras `fit`, `notebook`, `guess`, `all`).
 - The curve library for Guess is downloaded (`python -m sassafras.library fetch`) into a per-user
-  data folder instead of the package folder, from Zenodo with GitHub as a mirror; indexes in the
+  data folder instead of the package folder, from Zenodo (doi:10.5281/zenodo.24080759) with GitHub as a mirror; indexes in the
   old in-package location are still found.
 - IQuana links point to its SasView home.
 - Continuous integration (Linux and macOS) and trusted-publishing release workflows.

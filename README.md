@@ -300,7 +300,8 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   Where the generator coupled parameters or depended on the unknown SLDs, the
   stored values are only approximate starting points.
 * **Setup (quick):** download the prebuilt indexes (~290 MB, ~480 MB
-  unpacked), checksum-verified, into your per-user data folder:
+  unpacked; [doi:10.5281/zenodo.24080759](https://doi.org/10.5281/zenodo.24080759)),
+  checksum-verified, into your per-user data folder:
 
   ```bash
   python -m sassafras.library fetch
