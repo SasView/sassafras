@@ -78,7 +78,6 @@ class FitJob:
     # ------------------------------------------------------------------
     def _build(self, session: Session, request: dict):
         from sasmodels.bumps_model import Experiment, Model
-        from sasmodels.core import load_model
 
         full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None,
                                                  request.get("components"))
@@ -100,7 +99,7 @@ class FitJob:
                 pars[f"{base}_pd_type"] = pd.get("type", "gaussian")
                 pars[f"{base}_pd_n"] = int(pd.get("n", 35))
                 pars[f"{base}_pd_nsigma"] = float(pd.get("nsigma", 3.0))
-        kernel = load_model(full, dtype="double")
+        kernel = session.kernel(full)
         model = Model(kernel, **{k: v for k, v in pars.items()})
         for name, bounds in free.items():
             par = getattr(model, name, None)
@@ -141,13 +140,12 @@ class FitJob:
         """One bumps problem over several datasets: shared parameters are the same
         bumps Parameter in every model, expressions become bumps equalities."""
         from sasmodels.bumps_model import Experiment, Model
-        from sasmodels.core import load_model
         from . import multi
 
         members, shared, cons = multi.check_request(request)
         full = session.catalogue.full_name(request.get("model", ""), request.get("structure_factor") or None,
                                                  request.get("components"))
-        kernel = load_model(full, dtype="double")
+        kernel = session.kernel(full)
         models, experiments, n_total, n_free = {}, [], 0, 0
         for m in members:
             ds = session.datasets.get(m.get("id") or "")

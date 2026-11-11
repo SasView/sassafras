@@ -114,3 +114,13 @@ def test_background_estimate_is_mean_of_three_highest_q(session):
     ds = session.load_path(str(EXAMPLES / "flexible_cylinder_elliptical.dat"))[0][0]
     expected = (1.635490e-01 + 1.613380e-01 + 1.581890e-01) / 3
     assert ds.summary()["bkg_estimate"] == pytest.approx(expected, rel=1e-9)
+
+
+def test_single_precision_unless_model_needs_double():
+    from sassafras.backend import precision
+    assert precision("sphere") == "single"
+    assert precision("core_shell_sphere+cylinder") == "single"
+    assert precision("sphere@hardsphere") == "double"  # hardsphere is ~1e-3 off in single
+    assert precision("sphere+flexible_cylinder") == "double"
+    s = Session()
+    assert s.kernel("cylinder").dtype.itemsize == 4

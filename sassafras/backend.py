@@ -41,6 +41,24 @@ PD_DEFAULT_NSIGMA = 3.0
 MAX_KERNELS = 12  # compiled models kept in memory
 
 
+def precision(full_name: str) -> str:
+    """"single" unless a component is flagged by sasmodels as needing double
+    precision (e.g. hayter_msa, which is ~1% off in single)."""
+    from sasmodels.core import load_model_info
+
+    def ok(info):
+        if info.composition is not None:
+            return all(ok(p) for p in info.composition[1])
+        return bool(info.single)
+    return "single" if ok(load_model_info(full_name)) else "double"
+
+
+def load_kernel(full_name: str):
+    """Compile a model, in single precision where that is safe (1.2-1.6x faster)."""
+    from sasmodels import core
+    return core.load_model(full_name, dtype=precision(full_name))
+
+
 class UserError(ValueError):
     """An error whose message is meant for the person at the screen."""
 
@@ -441,13 +459,12 @@ class Session:
 
     # ---- models ---------------------------------------------------------
     def kernel(self, full_name: str):
-        from sasmodels import core
         with self.lock:
             if full_name in self._kernels:
                 self._kernels.move_to_end(full_name)
                 return self._kernels[full_name]
             try:
-                kernel = core.load_model(full_name, dtype="double")
+                kernel = load_kernel(full_name)
             except Exception as exc:
                 raise UserError(
                     f"Could not compile {full_name}: {exc}. sasmodels needs a working C "

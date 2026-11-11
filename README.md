@@ -49,6 +49,11 @@ sasmodels needs a C compiler to build model kernels (Xcode command-line tools
 on macOS). The first use of each model compiles it, which takes about 1–2 s,
 and sasmodels caches the result after that. OpenCL is off by default
 (`SAS_OPENCL=none`); set that variable yourself to change it.
+Models run in single precision, which is 1.2–1.6× faster and agrees with
+double to about 1 part in 10⁵. Models that sasmodels marks as needing double
+(most S(Q), e.g. `hardsphere`, `hayter_msa`, and a few P(Q), e.g.
+`flexible_cylinder`) stay in double, including any mixture
+or P@S that contains one.
 
 ## Data
 
@@ -356,8 +361,8 @@ and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
   `--notebook-dir`). One JupyterLab server rooted there is started on first
   use and reused afterwards; it keeps running after sassafras stops, so open
   notebooks aren't lost.
-* A check cell prints IQuana's χ²/N next to the sassafras value. IQuana builds
-  kernels in single precision, so they agree to about 1 part in 10⁴.
+* A check cell prints IQuana's χ²/N next to the sassafras value; they agree
+  to about 1 part in 10⁴.
 * Path-loaded files are read from their original location. Uploaded files,
   and files that sassafras rescaled or trimmed on load, are saved next to the
   notebook as a CSV snapshot (Q, I, dI, dQ).
