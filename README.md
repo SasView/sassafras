@@ -1,442 +1,171 @@
 # Sassafras
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24041504.svg)](https://doi.org/10.5281/zenodo.24041504)
+[![PyPI](https://img.shields.io/pypi/v/sassafras)](https://pypi.org/project/sassafras/)
 
 **Small Angle Scattering Structure- And Form-factor Rapid ASsessment**
 
-A lightweight SANS/SAXS analysis tool. Load reduced 1D data
-in any format sasdata reads, pick a sasmodels form factor (optionally × a
-structure factor), and drag sliders to overlay the model on the data —
-chi-by-eye, with live χ² and residuals. With the **Fit** toggle off there is
-no optimiser; the only automatic step is a one-click linear solve for scale
-and background. Switch **Fit** on to refine the chi-by-eye starting point
-with BUMPS (needs the optional `bumps` package).
+A quick-look SANS/SAXS tool for checking samples at the beamline. Load reduced
+1D data, pick any sasmodels form factor (optionally × a structure factor) and
+drag sliders to overlay the model, with live χ² and residuals. From there you
+can fit with BUMPS, fit several datasets together, let **Guess** suggest a
+model, and export the whole state as an IQuana notebook.
 
-It is a generalised local browser GUI with no external JavaScript, working with 
-any model and any (including no) data file.
+Sassafras runs locally as a browser GUI (no external JavaScript) and is part of
+the [SasView](https://www.sasview.org) ecosystem, alongside sasmodels, sasdata
+and [IQuana](https://github.com/SasView/IQuana).
 
-Sassafras is part of the [SasView](https://www.sasview.org) ecosystem,
-alongside sasmodels, sasdata and [IQuana](https://github.com/SasView/IQuana).
-
-## Install
+## Install and run
 
 ```bash
 pip install sassafras
-```
-
-This installs everything: the viewer (sasmodels, sasdata), fitting (bumps)
-and IQuana notebooks (IQuana, JupyterLab). The curve library for **Guess**
-(~290 MB) downloads in the background the first time sassafras starts; see
-[Guess](#guess).
-
-* The old extras (`[fit]`, `[notebook]`, `[guess]`, `[all]`) still work and add
-  nothing. From a clone, `pip install -e ".[test]"`.
-
-## Run
-
-```bash
-sassafras                                 # or: python -m sassafras
+sassafras                                   # or: python -m sassafras
 sassafras run_1234.xml run_1235.h5 -m core_shell_sphere -s hardsphere
-sassafras /data/reduced/                  # load every readable file in a folder (≤ 50)
+sassafras /data/reduced/                    # every readable file in a folder (≤ 50)
 ```
 
-A browser tab opens automatically. If it doesn't, open the printed
-`http://127.0.0.1:…` URL. Keep the terminal running, and stop with Ctrl+C or the
-**Stop server** button. Everything runs on your machine, and the server only
-listens on 127.0.0.1.
+A browser tab opens on `http://127.0.0.1:…`; stop with Ctrl+C or **Stop
+server**. Nothing leaves your machine except the one-off curve-library
+download for Guess (~290 MB, in the background on first start; `--no-fetch`
+skips it).
 
-Options: `--port 8765` · `--no-browser` · `-m MODEL` · `-s STRUCTURE_FACTOR` ·
-`--no-fetch` (don't download the curve library) ·
-`--check` (load, compile, evaluate once, print a JSON summary, exit).
-
-sasmodels needs a C compiler to build model kernels (Xcode command-line tools
-on macOS). The first use of each model compiles it, which takes about 1–2 s,
-and sasmodels caches the result after that. OpenCL is off by default
-(`SAS_OPENCL=none`); set that variable yourself to change it.
-Models run in single precision, which is 1.2–1.6× faster and agrees with
-double to about 1 part in 10⁵. Models that sasmodels marks as needing double
-(most S(Q), e.g. `hardsphere`, `hayter_msa`, and a few P(Q), e.g.
-`flexible_cylinder`) stay in double, including any mixture
-or P@S that contains one.
+* Options: `--port 8765` · `--no-browser` · `-m MODEL` · `-s STRUCTURE_FACTOR` ·
+  `--notebook-dir DIR` · `--no-fetch` · `--check` (load, compile, evaluate
+  once, print a JSON summary, exit).
+* sasmodels needs a C compiler (Xcode command-line tools on macOS). Each model
+  compiles once (1–2 s) and is cached.
+* Models run in single precision (1.2–1.6× faster, ~1e-5 relative difference),
+  except those sasmodels marks as needing double, such as most S(Q).
 
 ## Data
 
-* **Drop files** on the page, click to browse, or type a **file or folder
-  path** (path loads can later be re-read with ↻, which is useful while
-  reduction is still rewriting a file).
-* Formats: whatever sasdata's `Loader` supports — canSAS XML, NXcanSAS
-  (`.h5 .hdf5 .nxs`), ASCII/CSV (`.txt .dat .csv`), IGOR `.abs/.cor`, Anton
-  Paar `.pdh`, and others. Multi-entry files give one dataset per entry. 2D data
-  are skipped with a message.
-* Q is shown in Å⁻¹. sasdata converts nm⁻¹ files on load.
-* Points with Q ≤ 0, non-finite values or dI ≤ 0 are dropped, and the dataset's
-  tooltip says so.
-* **Active** dataset (radio button): its Q points and resolution are used for
-  the model, and it is the one scored. Pinhole dQ or slit (dxl/dxw) smearing
-  is applied by sasmodels exactly as in SasView.
-* **Shown** datasets (colour swatch): drawn for comparison, e.g. sample vs
-  buffer, or successive runs.
-* **Model only**: evaluates on a log-spaced grid (Q min, Q max, points in the
-  toolbar). You can still show datasets underneath.
+* Drop files on the page, browse, or type a file or folder path (path-loaded
+  files can be re-read with ↻ while reduction is still writing them).
+* Any format sasdata reads: canSAS XML, NXcanSAS, ASCII/CSV, IGOR `.abs/.cor`,
+  Anton Paar `.pdh`, … Q is shown in Å⁻¹ (nm⁻¹ files are converted); points
+  with Q ≤ 0, non-finite values or dI ≤ 0 are dropped with a note; 2D data are
+  skipped.
+* The **active** dataset (radio) supplies the Q points and resolution (pinhole
+  dQ or slit, as in SasView) and is the one scored. Other ticked datasets are
+  drawn for comparison. With no dataset the model is drawn on a log-spaced Q
+  grid.
 
 ## Model and parameters
 
-* Form factor list = all sasmodels 1D models, grouped by category, with a
-  filter box (type, then Enter).
-* S(Q) = hardsphere, hayter_msa, squarewell, stickyhardsphere, …, combined as
-  `model@sf` by sasmodels, so you get `radius_effective`, `volfraction`,
-  `radius_effective_mode` and, where supported, `structure_factor_mode` (β
-  approximation). `radius_effective` is greyed out unless its mode is
-  "unconstrained".
-* Every float parameter has an exact-value box, a slider, editable slider
-  min/max boxes and a **log** toggle. Initial ranges come from the sasmodels
-  defaults and limits. If you type a value outside the slider range, the range
-  widens to include it. Values outside sasmodels' hard limits are refused.
-* Choice parameters get a dropdown. Shell counts such as `n` in
-  `core_multi_shell` rebuild the parameter list.
-* **PD** opens polydispersity (σ/mean, distribution type; 35 points, 3σ) for
-  any polydisperse parameter.
-* Switching model keeps values for parameters with the same name (scale,
-  background, sld_solvent, radius, …) but not polydispersity. Each model also
-  remembers its own last settings for the session, and the last model and
-  values are restored on the next launch in the same browser.
-* **Background guess on load:** when a newly loaded dataset becomes active,
-  the background box is set to the mean I of its 3 highest-Q points
-  (once per file, so reloading the page keeps any value you've typed since).
-  **bg** (Match) re-applies it.
-* **Scale / Scale+bg** (Match): a weighted linear least-squares solve
-  over the χ² window, with the model shape fixed. It's for getting the curve
-  onto the data before you start adjusting by eye.
-* **Pin** (Curve) keeps the current curve, residuals and χ² as a dashed
-  reference to compare against.
-* **Save / Load** (Parameters; JSON: model, values, PD, slider ranges, Q window,
-  fit ticks and method, plot type, dataset details and package versions)
-  and **CSV ↓** (Curve; Q, I, dI, model, residual, in-window flag).
-* These buttons sit in a compact bar at the top right of the plot panel, next
-  to the χ²/N readout; hover any of them for the full description.
+* All sasmodels 1D form factors, grouped and filterable; any S(Q)
+  (hardsphere, hayter_msa, …) via sasmodels' `model@sf`, including
+  `radius_effective_mode` and the β approximation.
+* Each parameter has a value box, a slider with editable min/max and a **log**
+  toggle; **PD** opens its polydispersity (the button lights up once the width
+  is above 0).
+* Values carry over between models by name; each model remembers its own
+  settings, and the last state is restored on the next launch.
+* **Match**: **Scale** or **Scale+bg** solve scale (and background) by weighted
+  least squares in the χ² window; **bg** sets background from the 3
+  highest-Q points (done once automatically for each new dataset).
+* **Curve**: **Pin** keeps the current curve as a dashed reference (with its
+  χ²); **CSV ↓** exports Q, I, dI, model and residuals.
+* **Parameters**: **Save** / **Load** a JSON file with the model, values, PD,
+  slider ranges, Q window, fit setup, plot type and package versions.
 
 ## Fitting
 
-The **Fit** toggle next to **Defaults** in the Parameters panel shows the
-fitting controls (BUMPS). With it off, the page is the plain chi-by-eye viewer.
+Switch on **Fit** (Parameters panel), tick the parameters to vary (PD widths
+too), and press **Fit**. The slider min/max are the bounds. Methods:
+Levenberg–Marquardt (default, ± from the covariance), Nelder–Mead simplex,
+differential evolution, and DREAM (± from the posterior).
 
-1. Get close by eye: sliders, **Bkg from high Q**, **Match scale + bkg**.
-2. Tick the parameters to vary. A **fit** tick also appears in each open PD
-   panel. Ticks are remembered per model.
-3. **The slider's min/max boxes are the fit bounds** (0–1 for PD widths), so
-   narrow them to keep the fit physical.
-4. Pick a method and press **Fit**:
-   * **Levenberg–Marquardt**: fast, local, with ± from the covariance. The
-     default.
-   * **Nelder–Mead simplex**: local and robust to rough χ² surfaces.
-   * **Differential evolution**: global search within the bounds. Slower.
-   * **DREAM**: MCMC, so the ± values come from the posterior. The slowest
-     (seconds to minutes).
-5. The fit runs in the background with live step and χ²ᵣ readouts.
-   **Cancel** keeps the best point found so far.
+The fit runs in the background (**Cancel** keeps the best point so far). When
+it finishes the sliders move, each fitted value shows ±1σ (⚑ if it hit a
+bound), the starting curve is pinned and **Undo fit** restores it. **Fit χ²ᵣ**
+is the reduced χ², Σ((I − model)/dI)²/(N − p); it and the ± values are struck
+through once you change anything by hand.
 
-When it finishes:
-
-* the sliders move to the fitted values;
-* each fitted parameter shows its ± 1σ uncertainty (flagged ⚑ if it ended on
-  a bound: widen that range and refit);
-* the starting curve is pinned as "before fit";
-* **Undo fit** restores the previous values.
-
-The fit uses the same model, resolution (dQ or slit) and χ² window as the
-overlay, through `sasmodels.bumps_model`.
-
-Two χ² values are shown side by side. **Fit χ²ᵣ (BUMPS)** is
-Σ((I − model)/dI)² / (N − p), the usual reduced χ². **χ²/N** is the
-fit-agnostic number used everywhere else. Change any value by hand and the
-± values disappear and the fit χ²ᵣ is struck through, because they no longer
-describe the parameters on screen.
-
-**Copy** and **Save parameters** include the method, χ²ᵣ, degrees of freedom,
-uncertainties and any parameters at a bound while the fit is current.
-
-## Mix (several form factors)
+## Mix
 
 Tick **Mix** (Model panel) to sum up to four form factors, e.g. particles plus
-a low-Q power law, or two populations. The form factor and S(Q) selected above
-stay as form factor 1 (the only one that can carry a structure factor); **+
-form factor** adds the next, × removes one, and unticking Mix goes back to a
-single model, keeping form factor 1's values and polydispersity.
+a low-Q power law. Only the first can carry an S(Q). This is a sasmodels
+mixture (`sphere@hardsphere+power_law`): one global scale and background, with
+the other parameters shown as **radius ₂**, **power ₂**, … (sasmodels names
+`A_`, `B_`, … in fits, files and notebooks). Fit, Match, Multi and the
+notebook export all work with mixtures.
 
-* This is sasmodels' mixture (`sphere@hardsphere+power_law+cylinder`): one
-  global **scale** and **background**, and per-form parameters prefixed `A_`,
-  `B_`, `C_`, `D_`. The panel shows form factor 1's parameters by their plain
-  names (its own scale as **scale ₁**) and the others with their index
-  (**radius ₂**, **power ₂**, …), listed after form factor 1; hover a label
-  for the sasmodels name, which is also what fits, reports and JSON use.
-* A newly added form factor's scale is set to about 10% of the rest of the
-  model at every Q, so it doesn't swamp the curve; adjust from there.
-* Fitting, Match, Multi (shared/per-dataset/expressions on any of these
-  parameters) and the IQuana notebook all work with mixtures. The notebook
-  uses IQuana's raw `set_model('sphere@hardsphere+power_law')`, which keeps
-  the same `A_`/`B_` names, and `MultiFitter.add(..., model=...)` with the same
-  string; IQuana's Bayesian sampler doesn't take mixtures, so a DREAM setting
-  exports as simplex.
-* **Guess** suggests single models: applying a suggestion turns Mix off.
+## Multi
 
-## Multi (several datasets at once)
+Tick **Multi** to work on all ticked datasets at once, e.g. a contrast or
+concentration series, or SANS + SAXS.
 
-Tick **Multi** (next to **Fit** in the Parameters panel) to work on every
-ticked dataset together — a contrast series, a concentration series, SANS +
-SAXS — on the same page:
-
-* **Members** are the ticked (drawn) datasets. The active (radio) one is the
-  one the parameter panel edits; click another radio to edit that dataset.
-  Every member's model curve is drawn in its dataset colour, the residual plot
-  shows them all, and the χ²/N readout is the combined value (hover it for
-  each dataset's).
-* **all / each** next to each parameter: *all* means one shared value, slider
-  range and polydispersity for every member; *each* means every dataset has its
-  own (scale, background and solvent SLDs start as *each*, the rest as *all*).
-* **ƒ** (on an *each* parameter) sets this dataset's value by an expression of
-  other parameters, e.g. `0.8 * h2o.scale` or
-  `(h2o.background + d2o.background) / 2`. Datasets are referred to by the
-  short names shown in the Multi line (from the file names); a bare name such
-  as `scale` means the same dataset. Numbers, `+ - * /`, parentheses and
-  integer powers are allowed, as in IQuana; expressions are parsed, never
-  executed, and cycles are refused.
-* **Fit** (with the Fit toggle on) runs one joint BUMPS fit: shared parameters
-  are one fitted quantity, expression parameters are derived, and the fit
-  ticks apply to every dataset (bounds: the slider range — per dataset for
-  *each* parameters). **Undo fit** restores every dataset.
-* **IQuana notebook ↗** writes a `MultiFitter` notebook: one `fit.add(...)`
-  per dataset with its own values, bounds, PD, Q range and resolution, then
-  `fit.share(...)` and `fit.constrain(...)`, a check that prints each
-  dataset's χ²/N next to sassafras's, the joint fit, `fit.get_fit_report()`
-  and `fit.save_results(...)` (parameters, datasets, covariance and curves as
-  CSV). IQuana has no joint DREAM yet, so a DREAM setting exports as simplex.
-* **Copy to clipboard → Params**, **Save** and **Load** cover all members (a table with one
-  column per dataset; the JSON restores the datasets it can find by path).
-* All members share the model and the χ² window. **Guess** still looks at the
-  active dataset only and says so when Multi is on.
+* Each parameter is **all** (one shared value) or **each** (per dataset;
+  scale, background and solvent SLDs start as each). Click a dataset's radio to
+  edit its values.
+* **ƒ** sets an *each* parameter by an expression, e.g. `0.8 * h2o.scale` or
+  `(h2o.background + d2o.background) / 2`, using the dataset names shown in
+  the panel. Expressions are parsed, never executed; cycles are refused.
+* **Fit** runs one joint fit; χ²/N, pinned curves and residuals cover every
+  dataset, each in its own colour.
+* **Save**/**Load**, **Copy** and the notebook (an IQuana `MultiFitter`)
+  include every dataset.
 
 ## Guess
 
 **Guess** (Model panel) matches the active dataset, inside the χ² window,
-against a library of simulated curves. It lists the best-matching sasmodels
-models and loads the top one with starting values; click any other row to load
-that model instead. The result is a starting point, not a final fit; refine it
-with the sliders or the Fit toggle.
+against about 1.3 million simulated curves, ranks the models by their closest
+curve (shape only: each curve gets its own scale and background), and loads
+the best one with starting values. Click another row to load that model
+instead. Treat the result as a starting point for the sliders or Fit.
 
-### Curve library (SAS-55M-20k)
-
-SAS-55M-20k (the Sasformer training set) holds 1.1 million noise-free
-sasmodels curves: 55 form factors × 20,000 random parameter sets on 512 Q
-points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
-
-* **Ranking:** every library curve is interpolated onto the active dataset's Q
-  points inside the χ² window and given its own weighted least-squares scale
-  and background, so only the shape counts. The list shows each model's best
-  χ²/N (unsmeared, so it is a ranking rather than a fit quality). The match
-  takes 1–3 s.
-* **Starting values:** the three closest curves of the chosen model supply
-  their stored parameters. SLDs and polydispersity are not stored, so
-  sassafras keeps the default SLDs (scale absorbs the contrast), scans Schulz
-  polydispersity widths 0–0.3 on the parameters the generator made
-  polydisperse (fewer of them for slow kernels), then runs the short LM
-  polish. For models whose shape depends on contrast ratios (two or more
-  particle SLDs, e.g. core–shell), the polish also moves those SLDs.
-* **S(Q) sub-library:** SAS-55M-20k itself has no structure factors (apart
-  from `binary_hard_sphere`), so a second index adds P×S curves. It takes 3,000
-  random curves of each of the 20 particle form factors that have a defined
-  effective radius (spheres, core–shells, vesicles, cylinders, ellipsoids,
-  prisms, …; not the shape-independent, lamellar or flexible-chain models),
-  and multiplies each by four structure factors:
-
-  | S(Q) | weak | strong |
-  |---|---|---|
-  | `hardsphere` | φ 0.02–0.10 | φ 0.20–0.40 |
-  | `hayter_msa` (water, 298 K) | φ 0.005–0.05, charge 5–20 e, salt 0.01–0.1 M | φ 0.02–0.15, charge 20–60 e, salt 0–0.005 M |
-
-  S(Q) is evaluated at the form's effective radius (equivalent-volume sphere
-  where defined) × 1.0–1.1, on the same Q points, as
-  I = (I_stored − 0.001)·S(Q) + 0.001, so each curve keeps the generator's
-  polydispersity and SLDs. Settings where Hayter–MSA has no physical solution
-  (S ≤ 0, mostly large particles at weak charge) are dropped, leaving about
-  205,000 curves (~90 MB). The lookup searches both indexes at once, and a
-  `form@sf` match loads with `radius_effective_mode` "unconstrained" at the
-  stored radius_effective; temperature and dielectric constant stay fixed in
-  the polish.
-* **Limits:** P×S is only covered for the S(Q) settings above, and
-  two-population mixtures aren't covered at all.
-  Where the generator coupled parameters or depended on the unknown SLDs, the
-  stored values are only approximate starting points.
-* **Setup:** automatic. The first time sassafras starts without the library,
-  it downloads the prebuilt indexes (~290 MB, ~480 MB unpacked;
-  [doi:10.5281/zenodo.24080759](https://doi.org/10.5281/zenodo.24080759),
-  with GitHub as a mirror), checksum-verified, into your per-user data folder,
-  in the background. Guess switches to the library as soon as it is in place,
-  with no restart. Start with `--no-fetch` (or set `SASSAFRAS_NO_FETCH=1`) to
-  skip it, for example on an offline machine, and download it whenever you
-  like with:
-
-  ```bash
-  python -m sassafras.library fetch
-  ```
-
-  The folder is `~/Library/Application Support/sassafras` on macOS,
-  `~/.local/share/sassafras` on Linux and `%LOCALAPPDATA%\sassafras` on
-  Windows; set `SASSAFRAS_DATA` to use another. It survives upgrades and is
-  shared by every Python environment. Indexes built or fetched into
-  `sassafras/ml/` by versions before 0.5 are still found.
-
-* **Setup (from the dataset):** or download SAS-55M-20k
-  ([Figshare](https://doi.org/10.6084/m9.figshare.21716618), ~4.5 GB) and build
-  the index once (about 20 s; it needs `pyarrow`, `pip install -e ".[library]"`):
-
-  ```bash
-  python -m sassafras.library build ~/Downloads/sas-55m-20k
-  ```
-
-  This writes about 400 MB to `library` in the data folder. Then build the
-  S(Q) sub-library (about 30 s, ~90 MB in `library_sq`; `--per-model` sets
-  the size):
-
-  ```bash
-  python -m sassafras.library build-sq ~/Downloads/sas-55m-20k
-  ```
-
-  Use `--out` to put either elsewhere and start sassafras with `--library DIR`
-  / `--library-sq DIR` (or set `SASSAFRAS_LIBRARY` / `SASSAFRAS_LIBRARY_SQ`). Without an index, Guess is
-  unavailable and says how to get one.
-
-* **Data credit and licence:** SAS-55M-20k is by B. Yildirim, J. Doutch and
-  J. M. Cole (*Digital Discovery* **3**, 694–704, 2024) and is MIT-licensed;
-  the licence is in `sassafras/ml/SAS-55M-20k_LICENSE.txt` and is shipped as
-  `DATA_LICENSE.txt` inside the release archive. To publish a rebuilt index:
-  `python -m sassafras.library pack sassafras-library-vN.tar.gz`, upload it as
-  a new version of the library's Zenodo record (and attach it to a
-  `library-vN` GitHub release as a mirror), then update `RELEASE_TAG`,
-  `RELEASE_FILE`, `RELEASE_SHA256` and `ZENODO_URL` in `sassafras/library.py`.
+* **Starting values** come from the model's three closest curves, then a
+  short polydispersity scan and LM polish. SLDs aren't in the library, so the
+  defaults are kept and scale absorbs the contrast.
+* **The library** is [SAS-55M-20k](https://doi.org/10.6084/m9.figshare.21716618)
+  (55 form factors × 20,000 curves, Q 0.001–1 Å⁻¹) plus an S(Q) sub-library of
+  20 particle form factors × `hardsphere` and `hayter_msa` at weak and strong
+  interaction (~205,000 curves). Two-population mixtures aren't covered.
+* **Download**: automatic on first start, checksum-verified, from
+  [Zenodo](https://doi.org/10.5281/zenodo.24080759) (GitHub as a mirror) into
+  a per-user folder that survives upgrades (`~/Library/Application
+  Support/sassafras` on macOS, `~/.local/share/sassafras` on Linux,
+  `%LOCALAPPDATA%\sassafras` on Windows; override with `SASSAFRAS_DATA`). To
+  get it by hand, e.g. on an offline machine: `python -m sassafras.library fetch`.
+* SAS-55M-20k is by B. Yildirim, J. Doutch and J. M. Cole (*Digital
+  Discovery* **3**, 694, 2024), MIT-licensed.
 
 ## IQuana notebook
 
-**IQuana notebook ↗** (top right of the plot panel) writes a Jupyter notebook with
-[IQuana](https://sasview.github.io/IQuana/) code that reproduces what is on
-screen, then opens it in JupyterLab. It covers the data, model and structure
-factor, every parameter value, polydispersity, the Q window and the
-resolution. When the Fit toggle is on it also sets up the same fit: the ticked
-parameters with the slider ranges as bounds, and the same method (LM, simplex
-and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
+**IQuana notebook ↗** writes a Jupyter notebook with
+[IQuana](https://sasview.github.io/IQuana/) code that reproduces the screen
+(data, model, values, PD, Q window, resolution and, with Fit on, the same fit
+setup) and opens it in JupyterLab. Notebooks go to `~/sassafras_notebooks`.
+A check cell compares IQuana's χ²/N with sassafras's.
 
-* Notebooks are saved in `~/sassafras_notebooks` (change it with
-  `--notebook-dir`). One JupyterLab server rooted there is started on first
-  use and reused afterwards; it keeps running after sassafras stops, so open
-  notebooks aren't lost.
-* A check cell prints IQuana's χ²/N next to the sassafras value; they agree
-  to about 1 part in 10⁴.
-* Path-loaded files are read from their original location. Uploaded files,
-  and files that sassafras rescaled or trimmed on load, are saved next to the
-  notebook as a CSV snapshot (Q, I, dI, dQ).
-* Effective radius: sasmodels' `radius_effective_mode` "unconstrained" maps
-  to IQuana's `'unconstrained'`, and "radius" to `'link_radius'`. Other
-  computed modes (equivalent volume sphere, excluded volume, …) have no IQuana
-  equivalent, so `radius_effective` is fixed at the value sasmodels computes
-  for the current geometry, and the notebook says so.
+* Uploaded or rescaled data are saved next to the notebook as CSV.
+* `radius_effective_mode` maps to IQuana where it can; other computed modes
+  are fixed at the current value, and the notebook says so.
 * Models with per-shell vector parameters (e.g. `core_multi_shell`) can't be
-  addressed shell by shell in IQuana 0.5, so they are refused with a message.
-* IQuana and JupyterLab are installed with sassafras.
+  exported yet.
 
-## Copy to clipboard
+## Copy and plot
 
-Buttons above the plot put content on the clipboard, ready to paste into
-OneNote, an ELN, Word, Excel or a plain-text cell:
-
-* **All**: title line, figure and parameter table as one rich paste. Plain-text
-  editors get the text summary instead.
-* **Figure**: PNG of the data, model, pinned curve, residuals and legend, with
-  the dataset, model and χ²/N as a title. It is always drawn on a white
-  background, whatever the screen theme.
-* **Parameters**: model, χ²/N with N and the Q window, and every parameter with
-  units and polydispersity. It pastes as a table, or as aligned text where
-  tables aren't supported.
-* **Data**: Q, I, dI, model, residual and in-window flag at full precision. It
-  pastes as columns into Excel and as a table into notebooks.
-* **PNG ↓**: downloads the figure instead.
-
-## Plot
-
-**Plot type** (next to log Q / log I): **I(Q)**; **Kratky**, Q²·I(Q) vs Q
-(linear axes by default), a quick check of folding, compactness or chain-like
-scattering; or **Guinier**, ln I vs Q² (log axes off), where a straight
-low-Q line gives Rg from its slope (−Rg²/3). Guinier opens on the low-Q region
-where ln I has fallen by about 0.8, a little past the usual Q·Rg ≈ 1.3 limit;
-drag to zoom as usual. Data, error bars, the model and any pinned curve are
-all transformed; the residual panel keeps (I − model)/dI on the same Q axis.
-
-Light and dark themes follow the system setting. The **Theme** button in the header switches between auto, light and dark, and the browser remembers your choice. The **Colour** button next to it cycles the colour scheme (accents, first data series and logo): chopped (green, default), cooked (orange), washed (blue), chalked (grey) and girlypop (pink); it is remembered too. Log/linear axes, drag a box to zoom (a horizontal drag zooms Q only),
-double-click or **Reset zoom** to undo, and hover for point values. The χ² window
-greys out points outside it and restricts both χ² and Match.
-
-χ²/N = Σ((I − model)/dI)² ÷ (points in window). No parameters are fitted, so
-this is a number for comparing settings, not a goodness-of-fit statistic. To
-compare with a BUMPS/SasView fit's reduced χ², multiply by N/(N − p).
-
-## Checks
-
-`python -m pytest tests` covers loading every example format, nm⁻¹
-conversion, product and polydisperse models, vector parameters, the
-scale/background solve, error reporting and every HTTP endpoint. One
-regression test reproduces the `elliptical_cylinder_gui` starting curve to
-within 2 × 10⁻⁶ relative, and its BUMPS χ² (561.675) after the N/(N − p)
-rescale. With bumps installed, `tests/test_fit.py` checks that LM and
-simplex fits recover known parameters within their uncertainties, that the Q
-window and PD widths are respected, that cancellation works and that bad
-requests are rejected. Those tests are skipped when bumps is absent.
-
-`examples/` contains measured flexible elliptical cylinder SANS data
-(`flexible_cylinder_elliptical.dat`; four columns Q (Å⁻¹), I, dI (cm⁻¹), dQ (Å⁻¹), with
-metadata removed), synthetic sphere × hard-sphere data (canSAS XML and
-NXcanSAS), and a synthetic SAXS core–shell dataset written in nm⁻¹.
-
-## Layout
-
-```
-sassafras/backend.py   data loading (sasdata), model catalogue, evaluation (sasmodels)
-sassafras/server.py    stdlib HTTP server + CLI
-sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel; joint multi-dataset fits)
-sassafras/multi.py     Multi: request checks and safe expressions shared by the joint fit and the export
-sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
-sassafras/guess.py     Guess: curve-library ranking and starting values
-sassafras/library.py   curve library: build, pack, download (fetch) and shape matching
-sassafras/ml/          SAS-55M-20k licence (the library itself goes in the per-user data folder)
-sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
-                       fitting.js (Fit toggle and controls), multi.js (Multi), notebook.js, guess.js, app.css, logos + favicon
-```
-
-The backend can be used without the GUI:
-
-```python
-from sassafras.backend import Session
-s = Session()
-ds, _ = s.load_path("run.xml")
-out = s.evaluate({"model": "sphere", "structure_factor": "hardsphere",
-                  "params": {"radius": 60, "volfraction": 0.2}, "dataset": ds[0].id})
-out["chisq"]
-```
-
-Tested with Python 3.13, sasmodels 1.1.0, sasdata 0.12.2, bumps 1.0.3 and numpy 2.5.3, in
-headless Chromium (light and dark themes, desktop and phone widths).
-
-## Contributing
-
-Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+* **Copy to clipboard**: **All** (figure + parameter table, for OneNote, an
+  ELN or Word), **Figure**, **Params**, **Data** (columns for Excel), or
+  **PNG ↓**.
+* **Plot type**: I(Q), Kratky (Q²I vs Q) or Guinier (ln I vs Q²). Drag to zoom
+  (double-click to reset), hover for values; the χ² window greys out points
+  outside it.
+* χ²/N = Σ((I − model)/dI)² / N in the χ² window, a number for comparing
+  settings by eye. Multiply by N/(N − p) to compare with a reduced χ².
+* **Theme** (auto/light/dark) and **Colour** (chopped, cooked, washed, chalked,
+  girlypop) are remembered by the browser.
 
 ## Citing
 
-If sassafras helps your work, please cite it:
-[doi:10.5281/zenodo.24041504](https://doi.org/10.5281/zenodo.24041504). That DOI
-always resolves to the latest version; each release also has its own DOI on
-that page. GitHub's "Cite this repository" button gives the same reference
-from `CITATION.cff`.
+Please cite [doi:10.5281/zenodo.24041504](https://doi.org/10.5281/zenodo.24041504),
+which always resolves to the latest version (each release has its own DOI
+there), or use GitHub's "Cite this repository".
 
-## Licence
+## Contributing and licence
 
-BSD 3-Clause; see [LICENSE](LICENSE). Sassafras uses
-[sasmodels](https://github.com/SasView/sasmodels) and
-[sasdata](https://github.com/SasView/sasdata), which are also BSD-licensed.
+Issues and pull requests are welcome; see
+[CONTRIBUTING.md](https://github.com/SasView/sassafras/blob/main/CONTRIBUTING.md)
+and the [changelog](https://github.com/SasView/sassafras/blob/main/CHANGELOG.md).
+BSD 3-Clause ([LICENSE](https://github.com/SasView/sassafras/blob/main/LICENSE)).
