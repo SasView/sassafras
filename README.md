@@ -109,26 +109,31 @@ concentration series, or SANS + SAXS.
 ## Guess
 
 **Guess** (Model panel) matches the active dataset, inside the χ² window,
-against about 1.3 million simulated curves, ranks the models by their closest
-curve (shape only: each curve gets its own scale and background), and loads
-the best one with starting values. Click another row to load that model
-instead. Treat the result as a starting point for the sliders or Fit.
+against ~1.3 million simulated curves: [SAS-55M-20k](https://doi.org/10.6084/m9.figshare.21716618)
+(55 form factors × 20,000 curves, Q 0.001–1 Å⁻¹; Yildirim, Doutch and Cole,
+*Digital Discovery* **3**, 694, 2024, MIT) plus 20 particle form factors ×
+`hardsphere` and `hayter_msa`. Models are ranked by their closest curve, on
+shape only, and the best is loaded with starting values from its three closest
+curves, a polydispersity scan and a short LM polish. Click another row to load
+that model instead.
 
-* **Starting values** come from the model's three closest curves, then a
-  short polydispersity scan and LM polish. SLDs aren't in the library, so the
-  defaults are kept and scale absorbs the contrast.
-* **The library** is [SAS-55M-20k](https://doi.org/10.6084/m9.figshare.21716618)
-  (55 form factors × 20,000 curves, Q 0.001–1 Å⁻¹) plus an S(Q) sub-library of
-  20 particle form factors × `hardsphere` and `hayter_msa` at weak and strong
-  interaction (~205,000 curves). Two-population mixtures aren't covered.
-* **Download**: automatic on first start, checksum-verified, from
-  [Zenodo](https://doi.org/10.5281/zenodo.24080759) (GitHub as a mirror) into
-  a per-user folder that survives upgrades (`~/Library/Application
-  Support/sassafras` on macOS, `~/.local/share/sassafras` on Linux,
-  `%LOCALAPPDATA%\sassafras` on Windows; override with `SASSAFRAS_DATA`). To
-  get it by hand, e.g. on an offline machine: `python -m sassafras.library fetch`.
-* SAS-55M-20k is by B. Yildirim, J. Doutch and J. M. Cole (*Digital
-  Discovery* **3**, 694, 2024), MIT-licensed.
+The library (~290 MB, [Zenodo](https://doi.org/10.5281/zenodo.24080759))
+downloads once into a per-user folder (`SASSAFRAS_DATA` moves it); offline,
+use `python -m sassafras.library fetch`.
+
+**Use with care.** A low χ²/N means a model *can* describe the shape, not that
+it is right, so check the suggestion against what you know about the sample:
+
+* **Featureless data or a narrow Q range**: many models fit about equally;
+  treat rows with similar χ²/N as equivalent.
+* **Outside the library**: mixtures, other S(Q) or ranges, and features
+  outside 0.001–1 Å⁻¹ still get a closest match, which may be meaningless.
+* **Strong smearing**: library curves are unsmeared, which favours
+  polydisperse or smoother models.
+* **Contrast-dependent shapes** (core–shell, bicelle, …): SLDs aren't stored,
+  so starting values are rough.
+* **Many parameters**: sparse sampling can rank such models too low, while no
+  penalty for complexity can let a flexible model beat a simpler correct one.
 
 ## IQuana notebook
 
