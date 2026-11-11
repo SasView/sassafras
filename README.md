@@ -21,13 +21,16 @@ alongside sasmodels, sasdata and [IQuana](https://github.com/SasView/IQuana).
 ## Install
 
 ```bash
-pip install sassafras                     # viewer: sasmodels, sasdata, numpy
-pip install "sassafras[all]"              # + fitting (bumps), IQuana notebooks, Guess (torch)
-python -m sassafras.library fetch         # optional: the ~290 MB curve library for Guess
+pip install sassafras
 ```
 
-Extras on their own: `fit` (bumps), `notebook` (IQuana, JupyterLab), `guess`
-(torch, scipy, IQuana). From a clone, `pip install -e ".[all,test]"`.
+This installs everything: the viewer (sasmodels, sasdata), fitting (bumps)
+and IQuana notebooks (IQuana, JupyterLab). The curve library for **Guess**
+(~290 MB) downloads in the background the first time sassafras starts; see
+[Guess](#guess).
+
+* The old extras (`[fit]`, `[notebook]`, `[guess]`, `[all]`) still work and add
+  nothing. From a clone, `pip install -e ".[test]"`.
 
 ## Run
 
@@ -43,6 +46,7 @@ A browser tab opens automatically. If it doesn't, open the printed
 listens on 127.0.0.1.
 
 Options: `--port 8765` · `--no-browser` · `-m MODEL` · `-s STRUCTURE_FACTOR` ·
+`--no-fetch` (don't download the curve library) ·
 `--check` (load, compile, evaluate once, print a JSON summary, exit).
 
 sasmodels needs a C compiler to build model kernels (Xcode command-line tools
@@ -111,11 +115,10 @@ or P@S that contains one.
 * These buttons sit in a compact bar at the top right of the plot panel, next
   to the χ²/N readout; hover any of them for the full description.
 
-## Fitting (optional)
+## Fitting
 
-Install `bumps` (`pip install "sassafras[fit]"`) and restart
-sassafras. A **Fit** toggle next to **Defaults** in the Parameters panel then shows the fitting controls. With
-it off, or without bumps installed, the page is the plain chi-by-eye viewer.
+The **Fit** toggle next to **Defaults** in the Parameters panel shows the
+fitting controls (BUMPS). With it off, the page is the plain chi-by-eye viewer.
 
 1. Get close by eye: sliders, **Bkg from high Q**, **Match scale + bkg**.
 2. Tick the parameters to vary. A **fit** tick also appears in each open PD
@@ -212,59 +215,17 @@ SAXS — on the same page:
 * All members share the model and the χ² window. **Guess** still looks at the
   active dataset only and says so when Multi is on.
 
-## Guess (ML model suggestion)
+## Guess
 
-**Guess** (Model panel) passes the active dataset, inside the χ² window, to the
-trained network from the `ml-sans` project. It shows the ranked sasmodels
-suggestions with their probabilities, and loads the top one sassafras can
-handle. Click any other row to load that model instead.
-
-The network ranks models only; it doesn't predict parameters. Starting values
-come from a quick prior search:
-
-1. Up to 300 parameter sets for the suggested model (about 4 s) are drawn from
-   the same physical priors the network was trained on (`sans_ml.priors`,
-   including PD and the S(Q) effective-radius handling).
-2. Each set is scored against the data with sassafras's resolution-smeared
-   evaluation and the closed-form scale/background solve.
-3. If `bumps` is installed, the best three draws get a short, time-limited
-   Levenberg–Marquardt polish of the parameters the prior varies.
-
-The result is a starting point, not a final fit; refine it with the sliders or
-the Fit toggle.
-
-* Two-component suggestions (`A+B`) are listed but can't be loaded yet.
-* As the ml-sans README notes, the network does well on simulated-like curves
-  and less well on measured data, so treat the top three as the answer.
-* Setup: the trained model is bundled, so only the Python packages are
-  needed: `pip install "sassafras[guess]"` (`torch`, `scipy`, `iquana`) in the same
-  environment as sassafras. Without them the Guess button is dimmed; clicking it shows what is missing,
-  and the terminal prints a `Guess: ready` or `Guess: unavailable` line at
-  start-up.
-* The network runs in a short-lived child process, so PyTorch is never loaded
-  into the sassafras server. (On macOS, PyTorch and numpy/sasmodels can bring
-  conflicting OpenMP runtimes, which aborts the process that loads both.)
-* `sassafras/ml` holds `model.pt` and the inference subset of ml-sans's
-  `sans_ml` package (`__init__`, `catalogue`, `encode`, `net`, `predict`,
-  `priors`, `simulate`); training and data-generation code stays in ml-sans.
-  After retraining, refresh the copy from the ml-sans folder:
-
-  ```bash
-  cp ../ml-sans/model.pt sassafras/ml/
-  for f in __init__ catalogue encode net predict priors simulate; do
-    cp ../ml-sans/sans_ml/$f.py sassafras/ml/sans_ml/; done
-  ```
-
-  To try a new model without copying, start with `--ml-sans /path/to/ml-sans`
-  (or set `SASSAFRAS_ML_SANS`).
-* S(Q) can now be added to any form factor except those that already include
-  inter-particle structure or describe no finite particle. This is the same
-  rule ml-sans uses, so its P@S suggestions load.
+**Guess** (Model panel) matches the active dataset, inside the χ² window,
+against a library of simulated curves. It lists the best-matching sasmodels
+models and loads the top one with starting values; click any other row to load
+that model instead. The result is a starting point, not a final fit; refine it
+with the sliders or the Fit toggle.
 
 ### Curve library (SAS-55M-20k)
 
-When a curve-library index is installed, **Guess** uses it instead of the
-network. SAS-55M-20k (the Sasformer training set) holds 1.1 million noise-free
+SAS-55M-20k (the Sasformer training set) holds 1.1 million noise-free
 sasmodels curves: 55 form factors × 20,000 random parameter sets on 512 Q
 points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
 
@@ -305,9 +266,14 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   two-population mixtures aren't covered at all.
   Where the generator coupled parameters or depended on the unknown SLDs, the
   stored values are only approximate starting points.
-* **Setup (quick):** download the prebuilt indexes (~290 MB, ~480 MB
-  unpacked; [doi:10.5281/zenodo.24080759](https://doi.org/10.5281/zenodo.24080759)),
-  checksum-verified, into your per-user data folder:
+* **Setup:** automatic. The first time sassafras starts without the library,
+  it downloads the prebuilt indexes (~290 MB, ~480 MB unpacked;
+  [doi:10.5281/zenodo.24080759](https://doi.org/10.5281/zenodo.24080759),
+  with GitHub as a mirror), checksum-verified, into your per-user data folder,
+  in the background. Guess switches to the library as soon as it is in place,
+  with no restart. Start with `--no-fetch` (or set `SASSAFRAS_NO_FETCH=1`) to
+  skip it, for example on an offline machine, and download it whenever you
+  like with:
 
   ```bash
   python -m sassafras.library fetch
@@ -336,8 +302,8 @@ points from 0.001 to 1 Å⁻¹, each stored with its structural parameters.
   ```
 
   Use `--out` to put either elsewhere and start sassafras with `--library DIR`
-  / `--library-sq DIR` (or set `SASSAFRAS_LIBRARY` / `SASSAFRAS_LIBRARY_SQ`). Without an index, Guess uses the ml-sans network as
-  before.
+  / `--library-sq DIR` (or set `SASSAFRAS_LIBRARY` / `SASSAFRAS_LIBRARY_SQ`). Without an index, Guess is
+  unavailable and says how to get one.
 
 * **Data credit and licence:** SAS-55M-20k is by B. Yildirim, J. Doutch and
   J. M. Cole (*Digital Discovery* **3**, 694–704, 2024) and is MIT-licensed;
@@ -374,8 +340,7 @@ and DE → `fit(engine='bumps', method=…)`, DREAM → `fit_bayesian()`).
   for the current geometry, and the notebook says so.
 * Models with per-shell vector parameters (e.g. `core_multi_shell`) can't be
   addressed shell by shell in IQuana 0.5, so they are refused with a message.
-* Needs `iquana` and `jupyterlab` in the same Python environment:
-  `pip install "sassafras[notebook]"`.
+* IQuana and JupyterLab are installed with sassafras.
 
 ## Copy to clipboard
 
@@ -437,10 +402,9 @@ sassafras/server.py    stdlib HTTP server + CLI
 sassafras/fit.py       optional BUMPS fitting (background jobs, progress, cancel; joint multi-dataset fits)
 sassafras/multi.py     Multi: request checks and safe expressions shared by the joint fit and the export
 sassafras/notebook.py  IQuana notebook export and JupyterLab launcher
-sassafras/guess.py     Guess: ml-sans model suggestion + prior-search starting values
-sassafras/_guess_worker.py  child process that runs the ml-sans network (torch)
-sassafras/library.py   curve-library index (build) and shape matching for Guess
-sassafras/ml/          bundled model.pt + sans_ml inference code (copied from ml-sans)
+sassafras/guess.py     Guess: curve-library ranking and starting values
+sassafras/library.py   curve library: build, pack, download (fetch) and shape matching
+sassafras/ml/          SAS-55M-20k licence (the library itself goes in the per-user data folder)
 sassafras/static/      index.html, app.js (SVG plotting, controls), copy.js (clipboard),
                        fitting.js (Fit toggle and controls), multi.js (Multi), notebook.js, guess.js, app.css, logos + favicon
 ```

@@ -247,8 +247,8 @@ CATEGORY_LABELS = {
 # Form factors that get no S(Q): they already contain inter-particle interference
 # (paracrystals, lamellar stacks, binary_hard_sphere, RPA, peaks/correlation
 # functions) or describe no finite particle (power laws, line). sasmodels can
-# build "x@hardsphere" for them, but it is not physically meaningful. Same list
-# as ml-sans (sans_ml.catalogue.NO_STRUCTURE_FACTOR), so its suggestions load.
+# build "x@hardsphere" for them, but it is not physically meaningful. The S(Q)
+# sub-library of the Guess curve library follows the same list.
 NO_STRUCTURE_FACTOR = {
     "bcc_paracrystal", "fcc_paracrystal", "sc_paracrystal",
     "lamellar_stack_caille", "lamellar_hg_stack_caille", "lamellar_stack_paracrystal",

@@ -33,6 +33,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -503,6 +504,47 @@ def fetch(url: str | None = None, sha256: str = RELEASE_SHA256, dest: str | Path
     stamp.write_text(f"{RELEASE_TAG} {sha256}\n")
     log(f"Installed the curve library in {dest} (restart sassafras to use it)")
     return dest
+
+
+FETCH = {"state": "idle", "progress": "", "error": ""}   # the background download (fetch_in_background)
+
+
+def installed(dest: str | Path | None = None, sha256: str = RELEASE_SHA256) -> bool:
+    """True if this release of the curve library is already in ``dest`` (default: the data folder)."""
+    dest = Path(dest).expanduser() if dest else data_dir()
+    stamp = dest / "library.version"
+    return (stamp.is_file() and stamp.read_text().strip() == f"{RELEASE_TAG} {sha256}"
+            and (dest / "library" / "meta.json").is_file())
+
+
+def fetch_in_background(on_done=None, log=print):
+    """Run :func:`fetch` (same sources, same checksum, same folder) on a daemon thread.
+    Progress goes to ``FETCH``; ``on_done`` is called after a successful install."""
+    if FETCH["state"] == "running":
+        return None
+
+    def progress(msg):
+        m = msg.strip()
+        if m.endswith("%)") or m.endswith(" MB"):
+            FETCH["progress"] = m
+
+    def run():
+        FETCH.update(state="running", progress="starting", error="")
+        try:
+            fetch(log=progress)
+        except BaseException as exc:          # fetch reports failures with SystemExit
+            FETCH.update(state="failed", error=str(exc))
+            log(f"Guess: the curve-library download failed, so Guess is unavailable for now.\n"
+                f"       Try again later with: python -m sassafras.library fetch\n       ({exc})")
+            return
+        FETCH.update(state="done", progress="")
+        log("Guess: curve library installed; Guess is ready.")
+        if on_done:
+            on_done()
+
+    t = threading.Thread(target=run, name="sassafras-library-fetch", daemon=True)
+    t.start()
+    return t
 
 
 def main(argv=None):

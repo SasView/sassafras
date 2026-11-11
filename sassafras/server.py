@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import os
 import secrets
 import sys
 import threading
@@ -15,7 +16,7 @@ from urllib.parse import unquote
 from .backend import Session, UserError, supported_extensions
 from . import fit as fitting
 from . import notebook as nbexport
-from . import guess as mlguess
+from . import guess as guessing
 
 STATIC = Path(__file__).with_name("static")
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -40,9 +41,9 @@ def versions() -> dict:
 
 
 def make_handler(session: Session, token: str, startup: dict, notebook_dir: str | None = None,
-                 ml_sans: str | None = None, library: str | None = None, library_sq: str | None = None):
+                 library: str | None = None, library_sq: str | None = None):
     fits = fitting.FitManager(session)
-    guesser = mlguess.Guesser(session, ml_sans, library, library_sq)
+    guesser = guessing.Guesser(session, library, library_sq)
     exporter = nbexport.Exporter(session, notebook_dir)
 
     class Handler(BaseHTTPRequestHandler):
@@ -144,6 +145,8 @@ def make_handler(session: Session, token: str, startup: dict, notebook_dir: str 
                     self.send_json(200, exporter.export(body))
                 elif path == "/api/guess":
                     self.send_json(200, guesser.suggest(body))
+                elif path == "/api/guess/status":
+                    self.send_json(200, guesser.status())
                 elif path == "/api/guess/values":
                     self.send_json(200, guesser.starting_values(body))
                 else:
@@ -154,6 +157,7 @@ def make_handler(session: Session, token: str, startup: dict, notebook_dir: str 
                 self.send_json(400, {"error": f"Bad request: {exc}"})
             except Exception as exc:  # keep the server alive, report the cause
                 self.send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
+    Handler.guesser = guesser
     return Handler
 
 
@@ -169,14 +173,15 @@ def main(argv=None):
     parser.add_argument("--no-browser", action="store_true", help="print the URL without opening a browser")
     parser.add_argument("--notebook-dir", default=None,
                         help="folder for exported IQuana notebooks (default: ~/sassafras_notebooks)")
-    parser.add_argument("--ml-sans", default=None,
-                        help="full ml-sans folder to use for Guess instead of the model bundled in sassafras/ml")
     parser.add_argument("--library", default=None,
                         help="curve-library index for Guess (default: the per-user data folder; get it with "
                              "python -m sassafras.library fetch)")
     parser.add_argument("--library-sq", default=None,
                         help="S(Q) sub-library for Guess (default: the per-user data folder; get it with "
                              "python -m sassafras.library fetch)")
+    parser.add_argument("--no-fetch", action="store_true",
+                        help="don't download the curve library for Guess on start-up when it is missing "
+                             "(or set SASSAFRAS_NO_FETCH=1)")
     parser.add_argument("--check", action="store_true",
                         help="load files, compile and evaluate the initial model, print a summary and exit")
     args = parser.parse_args(argv)
@@ -216,18 +221,24 @@ def main(argv=None):
         return
 
     token = secrets.token_hex(24)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(session, token, startup, args.notebook_dir,
-                                                                       args.ml_sans, args.library, args.library_sq))
+    handler = make_handler(session, token, startup, args.notebook_dir, args.library, args.library_sq)
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     server.daemon_threads = True
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"\nsassafras is running at {url}")
-    g = mlguess.Guesser(session, args.ml_sans, args.library, args.library_sq).status()
-    if not g["available"]:
+    guesser = handler.guesser
+    from . import library as curvelib
+    fetch_now = (not guesser.library_dir and not args.library and not args.no_fetch
+                 and os.environ.get("SASSAFRAS_NO_FETCH", "").strip().lower() in ("", "0", "false", "no"))
+    if fetch_now:
+        curvelib.fetch_in_background(on_done=guesser.reload_libraries)
+        print(f"Guess: downloading the curve library (~290 MB, once) into {curvelib.data_dir()} in the background;"
+              "\n       Guess is ready when it finishes (--no-fetch to skip).")
+    g = guesser.status()
+    if g["available"]:
+        print(f"Guess: ready, curve library ({g['folder']})")
+    elif not fetch_now:
         print("Guess: unavailable - " + g["reason"])
-    else:
-        print(f"Guess: ready, {'curve library' if g['source'] == 'library' else 'ML network'} ({g['folder']})")
-        if g["source"] != "library":
-            print("       for the curve-library lookup: python -m sassafras.library fetch")
     print("Everything runs locally. Stop with Ctrl+C or the Stop button in the page.")
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()

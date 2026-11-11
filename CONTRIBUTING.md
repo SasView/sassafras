@@ -9,7 +9,7 @@ project's code of conduct (see the [SasView repository](https://github.com/SasVi
 
 ```bash
 git clone https://github.com/SasView/sassafras && cd sassafras
-pip install -e ".[all,test]"
+pip install -e ".[test]"
 python -m pytest -q
 ```
 
