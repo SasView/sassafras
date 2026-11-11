@@ -56,10 +56,8 @@
   <section class="panel plot-panel">
     <div class="score">
       <div title="Σ((I − model)/dI)² ÷ points in the χ² window, on the active dataset's Q with its resolution applied. Nothing is fitted, so use it to compare settings, not as a goodness-of-fit test."><small>χ² / N in Q window</small><strong id="chisq">—</strong></div>
-      <div><small>Points</small><span id="npts">—</span></div>
-      <div id="pin-score" hidden><small>Pinned curve χ² / N</small><span id="pin-chisq">—</span></div>
-      <div class="fit-only"><small>Fit χ²ᵣ (BUMPS)</small><span id="fit-chi">—</span></div>
-      <div><small>Evaluation</small><span id="timing">—</span></div>
+      <div class="pair"><div><small>Points</small><span id="npts">—</span></div><div><small>Eval</small><span id="timing">—</span></div></div>
+      <div class="pair extra"><div id="pin-score" hidden><small>Pinned</small><span id="pin-chisq">—</span></div><div id="fit-score"><small>Fit χ²ᵣ</small><span id="fit-chi">—</span></div></div>
       <div class="actions">
         <div class="actgroup" role="group" aria-label="Match the curve to the data">
           <small>Match</small>

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0
+
+- **Faster models:** kernels run in single precision (1.2–1.6× faster, ~1e-5 relative difference)
+  wherever sasmodels allows it; models it marks as needing double (most S(Q), e.g. `hardsphere`,
+  `hayter_msa`) stay in double.
+- **Parameter files** also save the fit ticks and method, plot type, model Q grid, dataset details
+  and package versions; loading one restores the ticks so Fit works straight away.
+- **Multi:** loading a saved multi-fit uses one dataset per entry (the latest copy if a file was
+  loaded twice) and unticks the rest, fixing wrong per-dataset values when files were loaded twice.
+- **Multi:** each dataset gets its own pinned curve, drawn faded in its own colour, with a combined
+  pinned χ².
+- Compact score readouts; pinning or fitting no longer moves the action buttons.
+
 ## 0.5.0 — first release under SasView
 
 - Moved to [github.com/SasView/sassafras](https://github.com/SasView/sassafras) and published on PyPI

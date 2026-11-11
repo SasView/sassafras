@@ -2,4 +2,4 @@
 
 Rapid SANS/SAXS data viewer with live sasmodels overlays (chi-by-eye, no optimiser).
 """
-__version__ = "0.5.0"
+__version__ = "0.6.0"
