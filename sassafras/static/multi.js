@@ -21,6 +21,7 @@ const M = {
   expr: {},        // dataset id -> { param: expression }
   curves: {},      // dataset id -> /api/evaluate result
   lastActive: null, before: null, errors: {},
+  pinned: null,     // dataset id -> { q, theory, residuals, chisq, chisq_n } pinned with the curve
 };
 
 function multiStore() {
@@ -313,6 +314,37 @@ function onScore() {
   $('chisq').textContent = t ? fmt(t.chisq, 4) : '—';
   $('npts').textContent = t ? String(t.n) : '—';
   $('chisq').title = t ? Object.entries(t.per).map(([a, v]) => `${a}: ${fmt(v, 4)}`).join('\n') : '';
+  const pc = pinnedTotals();
+  if (pc !== null) { $('pin-score').hidden = false; $('pin-chisq').textContent = fmt(pc, 4); }
+}
+/* ------------------------------------------------- pinned (per dataset) */
+function pinMembers() {   // called whenever S.pinned is set or cleared
+  M.pinned = null;
+  if (!S.pinned || !multiOn()) return;
+  M.pinned = {};
+  for (const id of multiMembers()) {
+    const c = M.curves[id]; if (!c) continue;
+    M.pinned[id] = { q: c.q, theory: [...c.theory], residuals: c.residuals ? [...c.residuals] : null, chisq: c.chisq, chisq_n: c.chisq_n };
+  }
+}
+const pinnedShown = () => multiOn() && S.pinned && M.pinned ? Object.keys(M.pinned).filter(id => S.visible.has(id) && S.datasets.some(d => d.id === id)) : [];
+function drawPinned(g, s) {
+  if (!multiOn() || !M.pinned) return false;
+  for (const id of pinnedShown()) {
+    const c = M.pinned[id];
+    g.append(sv('path', { d: pathD(c.q, transformed(c.q, c.theory), s), class: 'pinned multi', style: `stroke:${colourOf(id)}` }));
+  }
+  return true;
+}
+function pinnedResiduals(id) {
+  const c = pinnedShown().includes(id) && M.pinned[id];
+  return c?.residuals ? { r: c.residuals, colour: colourOf(id) } : null;
+}
+function pinnedLegend() { const n = pinnedShown().length; return n ? `Pinned: ${S.pinned.label} × ${n} (faded dataset colours)` : null; }
+function pinnedTotals() {
+  let chi = 0, n = 0;
+  for (const id of pinnedShown()) { const c = M.pinned[id]; if (!finite(c.chisq) || !c.chisq_n) return null; chi += c.chisq * c.chisq_n; n += c.chisq_n; }
+  return n ? chi / n : null;
 }
 function multiLegend() { return multiOn() ? `Model: ${S.current.model} × ${multiMembers().length} (each in its dataset colour)` : null; }
 

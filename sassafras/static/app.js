@@ -755,7 +755,8 @@ function renderMain() {
     }
     g.append(eg, pg);
   }
-  if (S.pinned) g.append(sv('path', { d: pathD(S.pinned.q, transformed(S.pinned.q, S.pinned.theory), s), class: 'pinned' }));
+  if (S.pinned && !(typeof drawPinned === 'function' && drawPinned(g, s)))   // multi.js: one per dataset
+    g.append(sv('path', { d: pathD(S.pinned.q, transformed(S.pinned.q, S.pinned.theory), s), class: 'pinned' }));
   if (typeof drawModels === 'function' && drawModels(g, s)) { /* multi.js drew every member's curve */ }
   else if (S.current) g.append(sv('path', { d: pathD(S.current.q, transformed(S.current.q, S.current.theory), s), class: 'model' }));
   const hover = sv('g', { id: 'hover-layer' }); g.append(hover);
@@ -778,7 +779,9 @@ function renderResiduals() {
   g.append(sv('rect', { x: RES.L, y: s.Y(1), width: RES.W - RES.L - RES.R, height: s.Y(-1) - s.Y(1), class: 'band' }));
   g.append(sv('line', { x1: RES.L, x2: RES.W - RES.R, y1: s.Y(0), y2: s.Y(0), class: 'zero' }));
   drawMasked(g, RES, s);
-  if (S.pinned?.residuals && S.pinned.dataset === ds.id) g.append(sv('path', { d: pathD(ds.q, S.pinned.residuals, s, finite), class: 'pinned' }));
+  const pres = typeof pinnedResiduals === 'function' && pinnedResiduals(ds.id);   // multi.js
+  if (pres) g.append(sv('path', { d: pathD(ds.q, pres.r, s, finite), class: 'pinned multi', style: `stroke:${pres.colour}` }));
+  else if (S.pinned?.residuals && S.pinned.dataset === ds.id) g.append(sv('path', { d: pathD(ds.q, S.pinned.residuals, s, finite), class: 'pinned' }));
   const colour = colourOf(ds.id), pg = sv('g', { fill: colour });
   if (typeof drawResiduals === 'function') drawResiduals(g, s, peak);   // multi.js: the other members
   ds.q.forEach((q, i) => { if (r[i] !== null && s.okX(q)) pg.append(sv('circle', { cx: s.X(q), cy: s.Y(clamp(r[i], -peak, peak)), r: 2.4, class: 'pt' + (inWindow(q) ? '' : ' out') })); });
@@ -794,7 +797,7 @@ function renderLegend() {
     const label = typeof multiLegend === 'function' && multiLegend();
     const k = el('span', { class: 'key', style: '--c:var(--model)' }); k.append(el('span', { class: 'mark' }), document.createTextNode(label || `Model: ${S.current.model}`)); box.append(k);
   }
-  if (S.pinned) { const k = el('span', { class: 'key', style: '--c:var(--pinned)' }); k.append(el('span', { class: 'mark dash' }), document.createTextNode(`Pinned: ${S.pinned.label}`)); box.append(k); }
+  if (S.pinned) { const k = el('span', { class: 'key', style: '--c:var(--pinned)' }); k.append(el('span', { class: 'mark dash' }), document.createTextNode((typeof pinnedLegend === 'function' && pinnedLegend()) || `Pinned: ${S.pinned.label}`)); box.append(k); }
 }
 function renderScore() {
   const cur = S.current, ds = activeDataset();
@@ -885,10 +888,11 @@ function pin() {
   const ds = activeDataset();
   S.pinned = { ...S.current, label: `${S.current.model}${ds ? '' : ''}`, params: { ...S.params } };
   if (S.pinned.dataset !== (ds?.id || null)) S.pinned.residuals = null;
+  if (typeof pinMembers === 'function') pinMembers();
   $('unpin').disabled = false; render();
   setStatus('Current curve pinned as a dashed reference.');
 }
-function unpin() { S.pinned = null; $('unpin').disabled = true; render(); }
+function unpin() { S.pinned = null; if (typeof pinMembers === 'function') pinMembers(); $('unpin').disabled = true; render(); }
 
 function paramsDoc() {
   const ds = activeDataset(), cur = S.current;

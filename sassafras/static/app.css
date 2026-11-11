@@ -548,6 +548,7 @@ body.multi-on .multi-expr.multi-only { display: flex !important; }
 .multi-expr input.bad { border-color: var(--error); color: var(--error); }
 body.multi-on .param.derived .row2, body.multi-on .param.derived .row1 .value { opacity: .45; pointer-events: none; }
 .plot .model.multi { stroke-width: 1.4; fill: none; }
+.plot .pinned.multi { opacity: .45; }
 .plot .model.multi.active { stroke-width: 2.2; }
 .multi-res .pt { opacity: .55; }
 .ds .alias { color: var(--accent); font-weight: 600; }

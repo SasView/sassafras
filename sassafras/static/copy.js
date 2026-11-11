@@ -103,7 +103,7 @@ text{fill:var(--ink-3);font:12px system-ui,-apple-system,"Segoe UI",sans-serif}
 .gridline{stroke:var(--grid);stroke-width:1}.axisline{stroke:var(--axis);stroke-width:1}
 .zero{stroke:var(--axis);stroke-width:1.2}.band{fill:var(--band)}.masked{fill:var(--masked)}
 .model{fill:none;stroke:var(--model);stroke-width:2;stroke-linejoin:round}
-.pinned{fill:none;stroke:var(--pinned);stroke-width:1.6;stroke-dasharray:6 4}
+.pinned{fill:none;stroke:var(--pinned);stroke-width:1.6;stroke-dasharray:6 4}.pinned.multi{opacity:.45}
 .err{stroke-width:1}.pt{stroke:var(--surface);stroke-width:1}.pt.out,.err.out{opacity:.35}
 .title{fill:var(--ink);font-size:14px;font-weight:600}.legend{fill:var(--ink-2);font-size:12px}`;
 
@@ -129,7 +129,7 @@ function figureSvg() {
   let x = 14;
   const items = shownSets().map(d => ({ label: d.label, colour: colourOf(d.id), kind: 'dot' }));
   if (S.current) items.push({ label: `Model: ${S.current.model}`, colour: 'var(--model)', kind: 'line' });
-  if (S.pinned) items.push({ label: `Pinned: ${S.pinned.label}`, colour: 'var(--pinned)', kind: 'dash' });
+  if (S.pinned) items.push({ label: (typeof pinnedLegend === 'function' && pinnedLegend()) || `Pinned: ${S.pinned.label}`, colour: 'var(--pinned)', kind: 'dash' });
   for (const it of items) {
     const mark = it.kind === 'dot' ? `<circle cx="${x + 5}" cy="40" r="4" fill="${it.colour}"/>`
       : `<line x1="${x}" x2="${x + 20}" y1="40" y2="40" stroke="${it.colour}" stroke-width="2"${it.kind === 'dash' ? ' stroke-dasharray="5 3"' : ''}/>`;

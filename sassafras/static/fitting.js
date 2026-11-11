@@ -155,6 +155,7 @@ async function startFit() {
   if (S.current) {
     S.pinned = { ...S.current, label: 'before fit', params: { ...S.params } };
     if (S.pinned.dataset !== S.activeId) S.pinned.residuals = null;
+    if (typeof pinMembers === 'function') pinMembers();   // multi.js: every member's curve
     $('unpin').disabled = false;
   }
   try {
