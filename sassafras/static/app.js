@@ -900,8 +900,14 @@ function paramsDoc() {
     fit: typeof fitInfo === 'function' ? fitInfo() : null,
     model: S.model, structure_factor: S.sf || null, components: S.components || [], sasmodels_name: fullName(),
     params: S.params, pd, controls: S.controls, slider_ranges: S.ranges,
-    dataset: ds ? { label: ds.label, source: ds.source } : null,
+    fit_free: typeof freeSet === 'function' ? [...freeSet()] : [],
+    fit_method: typeof F === 'object' ? $('fit-method').value || F.method : null,
+    dataset: ds ? { label: ds.label, source: ds.source, n_points: ds.n, q_range: [ds.qmin, ds.qmax],
+      resolution: ds.resolution, has_di: ds.has_di } : null,
     q_window: windowRange(), chisq_per_point: cur?.dataset && cur.chisq !== undefined ? cur.chisq : null,
+    plot: { mode: $('plot-mode').value, logx: $('logx').checked, logy: $('logy').checked },
+    model_grid: { qmin: Number($('grid-min').value), qmax: Number($('grid-max').value), n: Number($('grid-n').value) },
+    versions: S.versions || {},
   };
 }
 const safeName = s => s.replace(/[^\w.-]+/g, '_').replace(/\.(dat|xml|h5|hdf5|nxs|txt|csv|abs|cor|pdh)$/i, '');
@@ -919,7 +925,21 @@ async function loadParams(file) {
     if (doc.q_window) { $('win-min').value = doc.q_window[0] ?? ''; $('win-max').value = doc.q_window[1] ?? ''; }
     S.components = (doc.components || []).filter(c => modelEntry(c)).slice(0, MAX_FORMS - 1);
     renderComponents();
+    const g = doc.model_grid;
+    if (g) { if (finite(g.qmin)) $('grid-min').value = g.qmin; if (finite(g.qmax)) $('grid-max').value = g.qmax; if (finite(g.n)) $('grid-n').value = g.n; }
+    if (doc.plot?.mode in PLOT_MODES) {
+      setPlotMode(doc.plot.mode);
+      if (PLOT_MODES[doc.plot.mode].log) { $('logx').checked = doc.plot.logx !== false; $('logy').checked = doc.plot.logy !== false; }
+    }
+    if (typeof F === 'object' && Array.isArray(doc.fit_free)) {   // fit ticks and method (fitting.js)
+      const full = doc.sasmodels_name || [sf ? `${doc.model}@${sf}` : doc.model, ...S.components].join('+');
+      F.free[full] = new Set(doc.fit_free);
+      if ([...$('fit-method').options].some(o => o.value === doc.fit_method)) { F.method = doc.fit_method; $('fit-method').value = doc.fit_method; }
+      if (doc.fit_free.length && F.available) { F.enabled = true; $('fit-toggle').checked = true; }
+      fitStore();
+    }
     await selectModel(doc.model, sf, false, preset);
+    if (typeof F === 'object') { F.free[fullName()] ||= new Set(doc.fit_free || []); applyFitMode(); }
     setStatus(`Loaded parameters from ${file.name}.`);
   } catch (e) { setStatus(`Could not load ${file.name}: ${e.message}`, 'error'); }
 }
@@ -1067,6 +1087,7 @@ async function start() {
     if (typeof onGuessState === 'function') onGuessState(st);     // guess.js hook
     $('versions').textContent = Object.entries(st.versions).map(([k, v]) => `${k} ${v}`).join(' · ');
     $('versions').dataset.version = st.versions.sassafras || '';
+    S.versions = st.versions;
     $('ext-hint').textContent = 'canSAS XML · NXcanSAS · ASCII/CSV · IGOR · pdh …';
     $('ext-hint').title = st.extensions.join(' ');
     $('file-input').setAttribute('accept', st.extensions.join(','));

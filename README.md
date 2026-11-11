@@ -105,7 +105,8 @@ or P@S that contains one.
   onto the data before you start adjusting by eye.
 * **Pin** (Curve) keeps the current curve, residuals and χ² as a dashed
   reference to compare against.
-* **Save / Load** (Parameters; JSON: model, values, PD, slider ranges, Q window)
+* **Save / Load** (Parameters; JSON: model, values, PD, slider ranges, Q window,
+  fit ticks and method, plot type, dataset details and package versions)
   and **CSV ↓** (Curve; Q, I, dI, model, residual, in-window flag).
 * These buttons sit in a compact bar at the top right of the plot panel, next
   to the χ²/N readout; hover any of them for the full description.

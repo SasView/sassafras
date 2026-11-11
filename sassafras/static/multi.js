@@ -509,6 +509,7 @@ paramsDoc = function () {
   if (!multiOn()) return doc;
   const al = aliases();
   doc.multi = {
+    active: al[S.activeId] || null,
     modes: Object.fromEntries(floatParams().map(p => [p.name, modeOf(p.name)])),
     datasets: multiMembers().map(id => {
       const d = S.datasets.find(x => x.id === id), s = M.snap[id];
