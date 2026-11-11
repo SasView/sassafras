@@ -526,19 +526,36 @@ loadParams = async function (file) {
   if (!doc.multi) return;
   M.enabled = true; $('multi-toggle').checked = true; multiStore(); applyMultiMode();
   M.mode[fullName()] = { ...doc.multi.modes };
+  // one dataset per entry (the most recently loaded copy if a file was loaded twice);
+  // everything else is unticked so stale copies never join the fit
+  const pick = (e, taken) => {
+    const ok = x => !taken.has(x.id);
+    return S.datasets.findLast(x => ok(x) && x.source === e.source) || S.datasets.findLast(x => ok(x) && x.label === e.label);
+  };
+  const taken = new Set(), match = [];
+  for (const e of doc.multi.datasets) { const d = pick(e, taken); if (d) { taken.add(d.id); match.push([e, d]); } }
+  const dropped = S.datasets.filter(d => S.visible.has(d.id) && !taken.has(d.id)).length;
+  if (match.length) {
+    for (const id of [...S.visible]) if (!taken.has(id)) S.visible.delete(id);
+    const want = match.find(([e]) => e.alias === doc.multi.active)?.[1] || match[0][1];
+    if (!taken.has(S.activeId) || doc.multi.active) S.activeId = want.id;
+  }
+  const base = cloneSnap({ params: S.params, pd: S.pd, ranges: S.ranges });
   let matched = 0;
-  for (const e of doc.multi.datasets) {
-    const d = S.datasets.find(x => x.source === e.source) || S.datasets.find(x => x.label === e.label);
-    if (!d) continue;
+  for (const [e, d] of match) {
     S.visible.add(d.id); matched++;
-    if (d.id === S.activeId) { Object.assign(S.params, e.params); Object.assign(S.pd, e.pd); Object.assign(S.ranges, e.slider_ranges); }
-    else M.snap[d.id] = { params: { ...S.params, ...e.params }, pd: { ...structuredClone(S.pd), ...e.pd }, ranges: { ...structuredClone(S.ranges), ...e.slider_ranges } };
+    M.snap[d.id] = { params: { ...base.params, ...e.params }, pd: { ...structuredClone(base.pd), ...structuredClone(e.pd || {}) },
+      ranges: { ...structuredClone(base.ranges), ...structuredClone(e.slider_ranges || {}) } };
     M.expr[d.id] = { ...e.expressions };
   }
+  const a = M.snap[S.activeId];   // the active dataset's snapshot is S.params/S.pd/S.ranges itself
+  if (a) { S.params = a.params; S.pd = a.pd; S.ranges = a.ranges; }
+  M.lastActive = S.activeId;
   M.model = fullName();
   renderDatasets(); syncAll(); decorateParams(); queueEval(0);
   setStatus(`Loaded multi parameters for ${matched} of ${doc.multi.datasets.length} datasets from ${file.name}` +
-    (matched < doc.multi.datasets.length ? ' (load the missing files first, then load the JSON again).' : '.'), matched < doc.multi.datasets.length ? 'warn' : '');
+    (matched < doc.multi.datasets.length ? ' (load the missing files first, then load the JSON again).' : '.') +
+    (dropped ? ` Unticked ${dropped} dataset(s) not in the file (or duplicate copies).` : ''), matched < doc.multi.datasets.length || dropped ? 'warn' : '');
 };
 $('load-params').onchange = () => { const f = $('load-params').files[0]; if (f) loadParams(f); $('load-params').value = ''; };
 
