@@ -5,6 +5,8 @@ type: software
 authors:
   - family-names: Hammond
     given-names: Oliver
+    orcid: "https://orcid.org/0000-0002-5612-9343"
+    affiliation: "European Spallation Source"
 version: 0.6.0
 doi: 10.5281/zenodo.24041504
 license: BSD-3-Clause
