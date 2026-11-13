@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - `pip install sassafras` includes fitting (bumps) and IQuana notebooks (IQuana, JupyterLab); the
   old extras still work and add nothing.
