@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -11,21 +11,18 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  SASSAFRAS_NO_FETCH: "1"      # never download the curve library in CI
   SAS_OPENCL: none            # sasmodels: compiled C kernels, no GPU on the runners
 
 jobs:
   test:
-    name: ${{ matrix.os }} · py${{ matrix.python }} · ${{ matrix.extras }}
+    name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.10", "3.13"]
-        extras: ["test"]                       # viewer only: fit/notebook/guess tests skip
-        include:
-          - {os: ubuntu-latest, python: "3.12", extras: "test,fit,notebook"}
-          - {os: macos-latest, python: "3.12", extras: "test,fit,notebook"}
+        python: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,7 +32,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ".[${{ matrix.extras }}]" nbclient nbformat ipykernel
+          python -m pip install ".[test]" nbclient nbformat ipykernel
       - name: Test
         run: python -m pytest -q
       - name: Start-up check
@@ -52,7 +49,7 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
-      - name: The wheel holds the ML model but not the curve library
+      - name: The wheel holds the data licence but not the curve library
         run: |
-          python -m zipfile -l dist/*.whl | grep -q "sassafras/ml/model.pt"
+          python -m zipfile -l dist/*.whl | grep -q "sassafras/ml/SAS-55M-20k_LICENSE.txt"
           ! python -m zipfile -l dist/*.whl | grep -q "library/logI.npy"

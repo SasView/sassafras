@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- `pip install sassafras` includes fitting (bumps) and IQuana notebooks (IQuana, JupyterLab); the
+  old extras still work and add nothing.
+- Guess uses only the curve library, downloaded in the background on first start (same Zenodo/GitHub
+  source and checksum as `python -m sassafras.library fetch`; `--no-fetch` skips it). The ml-sans
+  network, PyTorch, scipy and `--ml-sans` are gone.
+- Shorter README (also the PyPI page); developer and library-rebuild notes moved to CONTRIBUTING.
+
 ## 0.6.0
 
 - **Faster models:** kernels run in single precision (1.2–1.6× faster, ~1e-5 relative difference)

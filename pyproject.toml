@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sassafras"
-version = "0.6.0"
-description = "Sassafras: Small Angle Scattering Structure- And Form-factor Rapid ASsessment. A SANS/SAXS data viewer with live sasmodels overlays, fitting and IQuana export"
+version = "0.7.0"
+description = "Small Angle Scattering Structure- And Form-factor Rapid ASsessment: quick-look SANS/SAXS viewer with live sasmodels overlays, fitting, model guessing and IQuana export"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "BSD-3-Clause"
@@ -27,15 +27,20 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
-dependencies = ["sasmodels>=1.0.7", "sasdata>=0.9", "numpy"]
+dependencies = [
+    "sasmodels>=1.0.7", "sasdata>=0.9", "numpy",
+    "bumps>=0.9",                          # Fit
+    "iquana>=0.5", "jupyterlab",           # IQuana notebooks
+]
 
 [project.optional-dependencies]
-fit = ["bumps>=0.9"]
-notebook = ["iquana>=0.5", "jupyterlab"]
-guess = ["torch>=2.5", "scipy", "iquana>=0.5"]
 library = ["pyarrow"]       # only to build the curve-library index
-test = ["pytest", "bumps>=0.9"]
-all = ["sassafras[fit,notebook,guess]"]
+test = ["pytest"]
+# everything is installed by default since 0.7; these stay so older install commands still work
+fit = []
+notebook = []
+guess = []
+all = []
 
 [project.urls]
 Homepage = "https://github.com/SasView/sassafras"
@@ -51,4 +56,4 @@ sassafras = "sassafras.server:main"
 packages = ["sassafras"]
 
 [tool.setuptools.package-data]
-sassafras = ["static/*", "ml/model.pt", "ml/sans_ml/*.py", "ml/SAS-55M-20k_LICENSE.txt"]
+sassafras = ["static/*", "ml/SAS-55M-20k_LICENSE.txt"]

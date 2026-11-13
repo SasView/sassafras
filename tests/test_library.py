@@ -121,3 +121,41 @@ def test_sq_sublibrary_is_consulted(index, sq_index):
     assert v["structure_factor"] == "hardsphere" and v["params"]["radius_effective_mode"] == 0
     assert v["params"]["radius"] == pytest.approx(40, rel=0.15)
     assert v["params"]["volfraction"] == pytest.approx(0.3, rel=0.3)
+
+
+@pytest.fixture
+def empty_data(tmp_path, monkeypatch):
+    from sassafras import library
+    monkeypatch.setenv("SASSAFRAS_DATA", str(tmp_path))
+    monkeypatch.delenv("SASSAFRAS_LIBRARY", raising=False)
+    monkeypatch.delenv("SASSAFRAS_LIBRARY_SQ", raising=False)
+    monkeypatch.setattr(library, "PACKAGE_ML", tmp_path / "no-package-copy")
+    monkeypatch.setitem(library.FETCH, "state", "idle")
+    return tmp_path
+
+
+def test_background_fetch_hands_the_library_to_guess(empty_data, monkeypatch):
+    from sassafras import library
+
+    def fake_fetch(log=print):
+        log("  150 MB (50%)")
+        (empty_data / "library").mkdir()
+        (empty_data / "library" / "meta.json").write_text("{}")
+    monkeypatch.setattr(library, "fetch", fake_fetch)
+    g = Guesser(Session())
+    assert g.library_dir is None and not g.status()["available"]
+    library.fetch_in_background(on_done=g.reload_libraries, log=lambda *a: None).join()
+    assert library.FETCH["state"] == "done"
+    assert g.status()["available"] and g.library_dir == (empty_data / "library").resolve()
+
+
+def test_failed_background_fetch_leaves_guess_on_the_network(empty_data, monkeypatch):
+    from sassafras import library
+
+    def failing_fetch(log=print):
+        raise SystemExit("Could not download the curve library")
+    monkeypatch.setattr(library, "fetch", failing_fetch)
+    g = Guesser(Session())
+    library.fetch_in_background(on_done=g.reload_libraries, log=lambda *a: None).join()
+    assert library.FETCH["state"] == "failed" and "Could not download" in library.FETCH["error"]
+    assert g.library_dir is None and not library.installed(empty_data)
