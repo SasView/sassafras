@@ -119,22 +119,21 @@ function parseExpr(text) {    // → AST; same grammar as sassafras/multi.py
     if (t.t === 'num') return { n: t.v };
     if (t.t === 'ref') return { r: t.v };
     if (t.v === '(') { const e = sum(); if (!take(')')) throw new Error('missing )'); return e; }
-    if (t.v === '-') return { neg: unary() };
-    if (t.v === '+') return unary();
     throw new Error(`unexpected "${t.v}"`);
   };
-  const unary = () => atom();
+  // As in Python, unary minus binds looser than the power: -x^2 = -(x^2), x^-2 = x^(-2)
+  const unary = () => take('-') ? { neg: unary() } : take('+') ? unary() : power();
   const power = () => {
-    const b = unary();
+    const b = atom();
     if (take('^')) {
-      const e = power();
+      const e = unary();
       const ev = e.n ?? (e.neg && e.neg.n !== undefined ? -e.neg.n : NaN);
       if (!Number.isInteger(ev)) throw new Error('only integer powers are allowed');
       return { op: '^', a: b, b: e };
     }
     return b;
   };
-  const prod = () => { let a = power(); for (;;) { const o = peek()?.v; if (o === '*' || o === '/') { k++; a = { op: o, a, b: power() }; } else return a; } };
+  const prod = () => { let a = unary(); for (;;) { const o = peek()?.v; if (o === '*' || o === '/') { k++; a = { op: o, a, b: unary() }; } else return a; } };
   const sum = () => { let a = prod(); for (;;) { const o = peek()?.v; if (o === '+' || o === '-') { k++; a = { op: o, a, b: prod() }; } else return a; } };
   const ast = sum();
   if (k < tk.length) throw new Error(`unexpected "${tk[k].v}"`);
