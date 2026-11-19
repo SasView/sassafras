@@ -111,10 +111,9 @@ class Dataset:
         """A sasmodels-compatible Data1D carrying this dataset's resolution."""
         from sasmodels.data import Data1D
         data = Data1D(x=self.q, y=self.i, dx=self.dq, dy=self.di)
-        if self.dxl is not None:
-            data.dxl = self.dxl
-        if self.dxw is not None:
-            data.dxw = self.dxw
+        if self.dxl is not None or self.dxw is not None:
+            # sasmodels reads both slit attributes once either is set; None means zero.
+            data.dxl, data.dxw = self.dxl, self.dxw
         data.filename = self.label
         return data
 

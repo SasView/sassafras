@@ -101,6 +101,16 @@ def test_match_scale_and_background_recovers_truth(session):
     assert out["background"] == pytest.approx(0.05, rel=1e-6)
 
 
+def test_slit_smeared_data_with_zero_width_evaluates(session):
+    """USAXS exports carry dxl > 0 and dxw = 0, which loads as dxw=None."""
+    q = np.geomspace(1e-4, 0.05, 100)
+    rec = dict(label="usaxs", source="upload:usaxs", q=q, i=np.ones_like(q), di=0.1 * np.ones_like(q),
+               dq=None, dxl=np.full_like(q, 0.02), dxw=None)
+    ds = session._add_records([rec])[0]
+    out = session.evaluate({"model": "sphere", "params": {"radius": 500}, "dataset": ds.id})
+    assert all(np.isfinite(out["theory"]))
+
+
 def test_bad_input_is_reported(session):
     with pytest.raises(UserError):
         session.evaluate({"model": "not_a_model", "params": {}})
