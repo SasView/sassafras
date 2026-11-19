@@ -51,7 +51,8 @@ s.evaluate({"model": "sphere", "structure_factor": "hardsphere",
 
 ## Rebuilding the curve library
 
-Download [SAS-55M-20k](https://doi.org/10.6084/m9.figshare.21716618) (~4.5 GB), then:
+Not needed to use or develop sassafras: the published archive on Zenodo already contains both
+indexes (`library/` and the S(Q) sub-library `library_sq/`). Rebuild only to change them. Download [SAS-55M-20k](https://doi.org/10.6084/m9.figshare.21716618) (~4.5 GB), then:
 
 ```bash
 pip install -e ".[library]"                                  # pyarrow

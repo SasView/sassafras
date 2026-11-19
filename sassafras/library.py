@@ -1,31 +1,23 @@
-"""Curve-library lookup for the Guess button (SAS-55M-20k).
+"""The curve library behind the Guess button.
 
-SAS-55M-20k (the Sasformer training set) holds 1.1 million noise-free sasmodels
-curves: 55 form factors x 20,000 random parameter sets, on 512 log-spaced Q
-points from 0.001 to 1 A^-1, each stored with its structural parameters.
+Users: nothing to build. The published library (Zenodo, doi:10.5281/zenodo.24080759)
+already contains both indexes and is downloaded automatically on first start, or with
+``python -m sassafras.library fetch``, into the per-user data folder (:func:`data_dir`):
 
-``build`` turns the two parquet files into a compact index (log10 I on 128 of
-the 512 Q points as float16, plus the parameters, ~400 MB) that is memory-mapped
-at run time. ``Library.match`` then scores every library curve against a
-dataset: each curve is interpolated onto the data's Q points (in log-log) and
-gets its own weighted least-squares scale and background, so only the shape
-counts. The best-matching curves give both the model ranking and the starting
-parameters. SLDs and polydispersity are not stored in the dataset; sassafras
-keeps the sasmodels default SLDs (scale absorbs the contrast) and scans a few
-polydispersity widths instead.
+* ``library/``: SAS-55M-20k, 1.1 million noise-free sasmodels curves (55 form factors
+  x 20,000 parameter sets), as log10 I on 128 Q points (0.001-1 A^-1) plus parameters.
+* ``library_sq/``: ~205,000 curves of 20 particle form factors x hardsphere and
+  hayter_msa (weak and strong interaction).
 
-Build once (needs pyarrow, which pandas users usually have)::
+At run time :class:`Library` memory-maps an index and ``Library.match`` scores every
+curve against a dataset: interpolated onto the data's Q points, each curve gets its
+own weighted least-squares scale and background, so only the shape counts. The
+closest curves give the ranking and the starting parameters (SLDs and polydispersity
+are not stored: default SLDs are kept and a few PD widths are scanned).
 
-    python -m sassafras.library build ~/Downloads/sas-55m-20k
-
-which writes ``library`` in the per-user data folder (:func:`data_dir`, or
-``$SASSAFRAS_DATA``). ``--out`` writes elsewhere; point sassafras at it with
-``--library`` or ``$SASSAFRAS_LIBRARY``. Or download the prebuilt indexes with
-``python -m sassafras.library fetch``.
-
-``build-sq`` adds an S(Q) sub-library in the same format (``library_sq``):
-a sample of the particle-shape curves multiplied by hardsphere and hayter_msa
-structure factors (see :func:`build_sq`). Guess searches both.
+Maintainers only: ``build``, ``build-sq`` and ``pack`` regenerate that archive from
+the raw SAS-55M-20k parquet files (needs pyarrow, ``pip install -e ".[library]"``);
+see CONTRIBUTING.md.
 """
 from __future__ import annotations
 
@@ -65,7 +57,7 @@ CHUNK = 32768              # library rows scored at a time
 FILES = ("train.parquet", "test.parquet")
 
 
-# ------------------------------------------------------------------ build
+# ------------------------------------------- build (maintainers only)
 def _pd_params(yaml_path: Path) -> dict:
     """Parameters that the generator made polydisperse, per model."""
     if not yaml_path.is_file():
@@ -155,7 +147,7 @@ def build(src: str | Path, out: str | Path = DEFAULT_DIR, n_q: int = N_Q, log=pr
     return out
 
 
-# ------------------------------------------------------- S(Q) sub-library
+# ----------------------------- S(Q) sub-library build (maintainers only)
 DEFAULT_SQ_DIR = data_dir() / "library_sq"
 SQ_BACKGROUND = 0.001          # the background SAS-55M-20k added to every curve
 # "weak" and "strong" structure-factor regimes for realistic samples (uniform ranges)
@@ -392,7 +384,7 @@ class Library:
         return best
 
 
-# ------------------------------------------------------ prebuilt download
+# --------------------- published archive: pack (maintainers) and fetch
 RELEASE_TAG = "library-v1"
 RELEASE_FILE = "sassafras-library-v1.tar.gz"
 ZENODO_URL = f"https://zenodo.org/records/24080759/files/{RELEASE_FILE}?download=1"   # doi:10.5281/zenodo.24080759 (tried first)
@@ -549,23 +541,23 @@ def fetch_in_background(on_done=None, log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m sassafras.library",
-                                 description="Build, pack or download the curve-library index used by Guess.")
+                                 description="Download the curve library used by Guess (fetch). build, build-sq and pack are for maintainers regenerating the published archive.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("build", help="index a SAS-55M-20k folder (train/test parquet files)")
+    b = sub.add_parser("build", help="maintainers: index a SAS-55M-20k folder (train/test parquet files; needs pyarrow)")
     b.add_argument("src")
     b.add_argument("--out", default=str(DEFAULT_DIR))
     b.add_argument("--nq", type=int, default=N_Q)
-    b2 = sub.add_parser("build-sq", help="add an S(Q) sub-library (hardsphere, hayter_msa) from the same folder")
+    b2 = sub.add_parser("build-sq", help="maintainers: build the S(Q) sub-library (hardsphere, hayter_msa) from the same folder")
     b2.add_argument("src")
     b2.add_argument("--out", default=str(DEFAULT_SQ_DIR))
     b2.add_argument("--per-model", type=int, default=3000, help="base curves per form factor (x4 S(Q) settings)")
     b2.add_argument("--seed", type=int, default=0)
-    f = sub.add_parser("fetch", help="download the prebuilt indexes from the sassafras GitHub release")
+    f = sub.add_parser("fetch", help="download the published library (both indexes) from Zenodo, GitHub as a mirror")
     f.add_argument("--url", default=None, help="download from this URL instead of the release sources")
     f.add_argument("--force", action="store_true", help="download again even if already installed")
     f.add_argument("--sha256", default=RELEASE_SHA256, help="expected checksum ('' to skip)")
-    f.add_argument("--dest", default=None, help="folder to unpack into (default: sassafras/ml)")
-    pk = sub.add_parser("pack", help="bundle the built indexes into a .tar.gz for a release")
+    f.add_argument("--dest", default=None, help="folder to unpack into (default: the per-user data folder)")
+    pk = sub.add_parser("pack", help="maintainers: bundle the built indexes into a .tar.gz for a new Zenodo version")
     pk.add_argument("out")
     pk.add_argument("--licence", default=None, help="licence file to include (default: sassafras/ml/SAS-55M-20k_LICENSE.txt)")
     args = ap.parse_args(argv)
